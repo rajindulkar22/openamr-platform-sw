@@ -3,8 +3,9 @@
 <package format="3">
   <name>openamrobot_gazebo</name>
   <version>0.1.0</version>
-  <description>Gazebo Harmonic simulation package for OpenAMRobot — world files, ROS–Gazebo bridge config, and simulation launch files.</description>
-  <maintainer email="rajindulkar7@gmail.com">Raj Indulkar</maintainer>
+  <description>Gazebo Harmonic simulation package for OpenAMRobot — world files, ROS–Gazebo bridge
+    config, and simulation launch files.</description>
+  <maintainer email="botshare.ai@gmail.com">OpenAMRobot Maintainers</maintainer>
   <license>MIT</license>
 
   <depend>openamrobot_description</depend>

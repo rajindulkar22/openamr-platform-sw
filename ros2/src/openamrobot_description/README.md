@@ -14,8 +14,8 @@ openamrobot_description/
 │   ├── collision/              ← simplified STL meshes for physics
 │   └── visual/                 ← full-detail STL meshes for rendering
 ├── urdf/
-│   ├── robo_urdf.urdf.xacro    ← main robot model (SolidWorks URDF export)
-│   ├── gazebo_control.xacro    ← Gazebo plugins + surface friction properties
+│   ├── robo_urdf.urdf.xacro    ← main robot model (includes camera_link + camera_optical_frame)
+│   ├── gazebo_control.xacro    ← Gazebo plugins (diff-drive, LiDAR, RGB camera) + friction
 │   └── robot.sdf
 ├── package.xml
 └── setup.py
@@ -40,5 +40,9 @@ For Gazebo simulation, see the `openamrobot_gazebo` package.
 | `fl/fr/bl/br_caster_link` (0.022 kg) | STL mesh |
 | `fl/fr/bl/br_wheel_link` (0.024–0.027 kg) | Sphere r=0.026 m |
 | `lidar_link` (0.168 kg) | STL mesh |
+| `camera_link` (0.05 kg) | Box 0.04×0.08×0.04 m |
+| `camera_optical_frame` | — (optical convention frame) |
 
-**Sensor:** 2D GPU LiDAR — 360°, 10 m max range, 10 Hz, Gaussian noise σ=0.001 m.
+**Sensor — LiDAR:** 2D GPU LiDAR — 360°, 10 m max range, 10 Hz, Gaussian noise σ=0.001 m.
+
+**Sensor — Camera:** Forward-facing RGB camera mounted at `xyz="0.35 0 0.20"` on `base_link` — 640×480, 30 Hz, 60° HFOV, 0.05–15 m range, topic `/rgb_image`, Gaussian noise σ=0.005. Frame `camera_optical_frame` follows ROS optical convention.

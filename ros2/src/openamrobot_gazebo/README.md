@@ -13,21 +13,28 @@ openamrobot_gazebo/
 ├── launch/
 │   └── gz_simulator.launch.py  ← full Gazebo Harmonic simulation bringup
 ├── worlds/
-│   ├── walled_world.sdf        ← enclosed arena (default)
-│   └── depot.sdf               ← warehouse / depot environment
+│   └── walled_world.sdf        ← enclosed arena (default)
 ├── package.xml
 └── setup.py
 ```
 
 ## Usage
 
-Launch the full simulation stack:
+Launch the full simulation stack with the default world:
 
 ```bash
 ros2 launch openamrobot_gazebo gz_simulator.launch.py
 ```
 
-This starts Gazebo Harmonic with `walled_world.sdf`, spawns the robot, and brings up `robot_state_publisher`, `joint_state_publisher`, and the ROS–Gazebo bridge.
+Launch with any custom world file:
+
+```bash
+ros2 launch openamrobot_gazebo gz_simulator.launch.py world:=/path/to/your_world.sdf
+```
+
+This starts Gazebo Harmonic, spawns the robot, and brings up `robot_state_publisher`, `joint_state_publisher`, and the ROS–Gazebo bridge.
+
+> **Note:** If your world references external meshes or resources, add their parent directory to `GZ_SIM_RESOURCE_PATH` before launching.
 
 ## ROS–Gazebo Bridge Topics
 
@@ -48,3 +55,4 @@ This starts Gazebo Harmonic with `walled_world.sdf`, spawns the robot, and bring
 |---|---|---|
 | `use_sim_time` | `True` | All nodes use `/clock` from Gazebo |
 | `use_robot_state_pub` | `True` | Start `robot_state_publisher` |
+| `world` | `worlds/walled_world.sdf` | Full path to any Gazebo world file |

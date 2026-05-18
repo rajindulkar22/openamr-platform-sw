@@ -3,8 +3,9 @@
 <package format="3">
   <name>openamrobot_description</name>
   <version>0.1.0</version>
-  <description>Robot description package for OpenAMRobot mobile base — URDF/Xacro model, STL meshes, and RViz visualization launch.</description>
-  <maintainer email="rajindulkar7@gmail.com">Raj Indulkar</maintainer>
+  <description>Robot description package for OpenAMRobot mobile base — URDF/Xacro model, STL meshes,
+    and RViz visualization launch.</description>
+  <maintainer email="botshare.ai@gmail.com">OpenAMRobot Maintainers</maintainer>
   <license>MIT</license>
 
   <exec_depend>robot_state_publisher</exec_depend>

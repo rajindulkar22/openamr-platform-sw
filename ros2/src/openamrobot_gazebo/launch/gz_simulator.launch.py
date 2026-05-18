@@ -16,8 +16,8 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time')
     use_robot_state_pub = LaunchConfiguration('use_robot_state_pub')
+    world = LaunchConfiguration('world')
 
-    world = os.path.join(gazebo_dir, 'worlds', 'walled_world.sdf')
     xacro_file = os.path.join(description_dir, 'urdf', 'robo_urdf.urdf.xacro')
     robot_desc = ParameterValue(Command(['xacro ', xacro_file]), value_type=str)
 
@@ -65,7 +65,7 @@ def generate_launch_description():
                 'gz_sim.launch.py',
             )
         ),
-        launch_arguments={'gz_args': ['-r -v 4 ', world]}.items(),
+        launch_arguments={'gz_args': ['-r -v 4 ', LaunchConfiguration('world')]}.items(),
     )
 
     spawn_entity = Node(
@@ -88,6 +88,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_robot_state_pub', default_value='True',
             description='Whether to start robot_state_publisher'),
+        DeclareLaunchArgument(
+            'world',
+            default_value=os.path.join(gazebo_dir, 'worlds', 'walled_world.sdf'),
+            description='Full path to the Gazebo world file (.sdf) to load'),
         gz_resource_path,
         gz_sim,
         bridge,
