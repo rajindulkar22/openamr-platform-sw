@@ -2,3 +2,23 @@
 build/
 install/
 log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor
+.vscode/
+.devcontainer/
+*.swp
+*~
+
+# Misc
+*.gv
+*.pdf
+.claude/
+
+# UI — lives in its own separate repo (openamrobot-ui)
+ui/
