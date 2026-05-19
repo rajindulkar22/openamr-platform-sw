@@ -2,7 +2,7 @@
     ros__parameters:
         image_transport: raw
         family: 36h11
-        size: 0.40              # simulated tag panel size in meters (matches model.sdf box face)
+        size: 0.30              # simulated tag panel size in meters (matches model.sdf box face)
         max_hamming: 0
 
         detector:

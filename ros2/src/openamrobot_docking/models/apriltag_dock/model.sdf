@@ -7,24 +7,16 @@
         <cast_shadows>false</cast_shadows>
         <geometry>
           <box>
-            <size>0.001 0.40 0.40</size>
+            <size>0.001 0.30 0.30</size>
           </box>
         </geometry>
-        <!--
-          Material rendered as fully self-illuminated via emissive_map so the
-          texture contrast survives the Gazebo lighting pass. Without this,
-          ambient + diffuse multiply darken the white cells to mid-grey and
-          AprilTag's corner detector rejects the (too low contrast) image.
-        -->
         <material>
           <ambient>1 1 1 1</ambient>
           <diffuse>1 1 1 1</diffuse>
           <specular>0 0 0 0</specular>
-          <emissive>1 1 1 1</emissive>
           <pbr>
             <metal>
               <albedo_map>model://apriltag_dock/materials/textures/apriltag_36h11_id0.png</albedo_map>
-              <emissive_map>model://apriltag_dock/materials/textures/apriltag_36h11_id0.png</emissive_map>
               <metalness>0.0</metalness>
               <roughness>1.0</roughness>
             </metal>
@@ -34,7 +26,7 @@
       <collision name="collision">
         <geometry>
           <box>
-            <size>0.001 0.40 0.40</size>
+            <size>0.001 0.30 0.30</size>
           </box>
         </geometry>
       </collision>

@@ -175,7 +175,7 @@
     <include>
       <uri>model://apriltag_dock</uri>
       <name>apriltag_dock</name>
-      <pose>4.899 0 0.5 0 0 3.14159</pose>
+      <pose>4.899 0 0.3 0 0 3.14159</pose>
     </include>
 
   </world>
