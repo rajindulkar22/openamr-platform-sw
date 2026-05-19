@@ -58,6 +58,7 @@ class TagRunningAverage:
 
     def __init__(self):
         self.count = 0
+        self.total_weight = 0.0   # sum of weights, for the weighted mean
         self.x = 0.0
         self.y = 0.0
         self.qx = 0.0
@@ -65,20 +66,35 @@ class TagRunningAverage:
         self.qz = 0.0
         self.qw = 0.0
 
-    def update(self, x, y, qx, qy, qz, qw):
+    def update(self, x, y, qx, qy, qz, qw, weight=1.0):
+        """Fold a new sample into the running mean with the given weight.
+
+        weight = 1.0 reproduces the original true-mean behaviour (each
+        sample contributes equally). For a distance-weighted mean (used
+        during Phase 4 so noisier near-field detections influence the
+        mean less than the clean far-field ones), pass a weight that
+        increases with the distance at which the sample was taken.
+        """
+        if weight <= 0.0:
+            return
         self.count += 1
-        n = float(self.count)
-        # Sign-align the new quaternion to the existing mean so q and −q
+        new_total = self.total_weight + weight
+        # Sign-align the new quaternion to the existing mean so q and -q
         # don't cancel each other.
         if self.count > 1 and (qx * self.qx + qy * self.qy
                                + qz * self.qz + qw * self.qw) < 0.0:
             qx, qy, qz, qw = -qx, -qy, -qz, -qw
-        self.x += (x - self.x) / n
-        self.y += (y - self.y) / n
-        self.qx += (qx - self.qx) / n
-        self.qy += (qy - self.qy) / n
-        self.qz += (qz - self.qz) / n
-        self.qw += (qw - self.qw) / n
+        # Weighted incremental mean:
+        # m_new = (W_old * m_old + w * x) / (W_old + w)
+        #       = m_old + (w / W_new) * (x - m_old)
+        k = weight / new_total
+        self.x += k * (x - self.x)
+        self.y += k * (y - self.y)
+        self.qx += k * (qx - self.qx)
+        self.qy += k * (qy - self.qy)
+        self.qz += k * (qz - self.qz)
+        self.qw += k * (qw - self.qw)
+        self.total_weight = new_total
         # Renormalise the quaternion.
         norm = math.sqrt(self.qx * self.qx + self.qy * self.qy
                          + self.qz * self.qz + self.qw * self.qw)
@@ -178,13 +194,67 @@ class DockTrigger(Node):
         self.declare_parameter('line_yaw_kp', 2.5)
         self.declare_parameter('line_lookahead_distance', 0.4)
 
-        # Final-approach distance at which the controller switches from
-        # line-tracking (perpendicular-to-tag-plane heading) to visual servo
-        # (heading directly at the running-average tag centre). Visual servo
-        # keeps the tag in the centre of the camera, which suppresses the
-        # residual yaw wobble caused by the perpendicular_yaw bias near the
-        # tag. Set to 0 to disable the switch entirely.
-        self.declare_parameter('visual_servo_distance', 0.8)
+        # Distance below which Phase 4 switches from map-frame line-tracking
+        # to camera-frame visual servoing. Above this distance, the
+        # running-average filter and the pure-pursuit on the perpendicular
+        # line do the work (they handle long-range alignment well, with
+        # plenty of clean detections far from the tag). Below it, the
+        # running average is frozen (no more updates) and the heading
+        # controller switches to a direct closed-loop on the image-frame
+        # angle to the tag:
+        #
+        #     omega = -visual_servo_kp · atan2(X_optical, Z_optical)
+        #
+        # This works because map-frame solvePnP carries a systematic bias
+        # in the near field (corners at the bottom of the FOV are noisy),
+        # but the image-frame angle is self-consistent: it directly
+        # describes where the tag IS in the camera, not where solvePnP
+        # thinks it is in the map. Keeping the tag centred in the image
+        # = aiming straight at the dock.
+        #
+        # Linear forward speed continues with the taper.
+        # Set to 0 to disable visual servoing (line-tracking all the way).
+        self.declare_parameter('visual_servo_distance', 1.0)
+        self.declare_parameter('visual_servo_kp', 1.0)         # rad/s per rad of image-frame angle
+
+        # Number of refinement samples to accept in Phase 4 before
+        # declaring the line "stabilised" and handing control over to
+        # the visual servo. Once this many fresh detections have been
+        # folded into the running average (the cleanest ones, taken
+        # while the robot is still relatively far from the dock), the
+        # line is locked-in and the robot stops refining it. The visual
+        # servo then handles the final approach using the live camera-
+        # frame angle (which doesn't depend on the noisy near-field
+        # solvePnP outputs).
+        #
+        # Set to 0 to disable the count-based trigger (only the distance
+        # threshold visual_servo_distance will then drive the handover).
+        self.declare_parameter('line_stabilization_samples', 25)
+        # Low-pass smoothing on the image-frame angle to reject noisy
+        # solvePnP spikes near the dock. alpha = 0.2 gives a time
+        # constant of ~5 frames (≈ 0.35 s at 14 Hz detection rate);
+        # alpha = 1.0 disables filtering.
+        self.declare_parameter('visual_servo_filter_alpha', 0.2)
+
+        # Outlier rejection on Phase 4 running-average updates.
+        # A new detection that lands more than this many metres from
+        # the current running-average position in the XY plane is almost
+        # certainly a single-frame solvePnP glitch and is SKIPPED (not
+        # folded into the mean). Typical legitimate jitter is ~5 cm; 0.30
+        # m is a generous threshold that still catches the gross outliers.
+        # Set to 0 to disable outlier rejection.
+        self.declare_parameter('refinement_outlier_threshold', 0.30)
+
+        # Distance-based weight floor: how much weight near-field samples
+        # contribute to the running mean relative to far-field ones. With
+        # weight_min = 0.1 and weight_full_distance = 1.5:
+        #   sample at 1.5 m → weight 1.0 (full, like Phase 2)
+        #   sample at 0.75 m → weight 0.5
+        #   sample at <= 0.15 m → weight 0.1 (clamped floor)
+        # This keeps near-field (noisier) detections in the mean but lets
+        # the clean far-field samples dominate.
+        self.declare_parameter('refinement_weight_min', 0.1)
+        self.declare_parameter('refinement_weight_full_distance', 1.5)
 
         # Initial tag-search scan. After Nav2 reaches the staging zone the
         # tag may not be in the camera frame (Nav2 goal yaw tolerance plus
@@ -228,6 +298,12 @@ class DockTrigger(Node):
         self.line_yaw_kp = float(self.get_parameter('line_yaw_kp').value)
         self.line_lookahead_distance = float(self.get_parameter('line_lookahead_distance').value)
         self.visual_servo_distance = float(self.get_parameter('visual_servo_distance').value)
+        self.visual_servo_kp = float(self.get_parameter('visual_servo_kp').value)
+        self.visual_servo_filter_alpha = float(self.get_parameter('visual_servo_filter_alpha').value)
+        self.line_stabilization_samples = int(self.get_parameter('line_stabilization_samples').value)
+        self.refinement_outlier_threshold = float(self.get_parameter('refinement_outlier_threshold').value)
+        self.refinement_weight_min = float(self.get_parameter('refinement_weight_min').value)
+        self.refinement_weight_full_distance = float(self.get_parameter('refinement_weight_full_distance').value)
         self.scan_rotation_speed = float(self.get_parameter('scan_rotation_speed').value)
         self.scan_consecutive_target = int(self.get_parameter('scan_consecutive_target').value)
         self.scan_centring_tolerance = float(self.get_parameter('scan_centring_tolerance').value)
@@ -513,10 +589,13 @@ class DockTrigger(Node):
         last_stamp_ns = -1
         had_detection = True   # we entered Phase 4 with the 40-sample seed
         samples_in_phase4 = 0
+        in_visual_servo_logged = False  # log the visual-servo transition once
+        filtered_image_angle = None     # low-pass state for visual servo
 
         self.get_logger().info(
             f'   start d_to_tag={d0:.3f}m, forward to travel ≈ '
             f'{max(0.0, d0 - self.docking_distance):.3f}m'
+            f' (visual servo activates at d ≤ {self.visual_servo_distance:.2f}m)'
         )
 
         while time.time() < deadline:
@@ -526,40 +605,106 @@ class DockTrigger(Node):
                 continue
             rx, ry, ryaw = pose
 
-            # Fold any new detection into the running average — this is
-            # how we *refine the line* on the fly while moving. Detections
-            # stop arriving when the tag falls out of FOV in the very
-            # near field; at that point we just stop updating and keep
-            # the last-known line.
+            # Distance to the running-average tag, computed BEFORE folding
+            # the new detection. Drives one of the two visual-servo
+            # triggers (the other is the refinement sample count).
+            distance_to_avg = math.hypot(avg.x - rx, avg.y - ry)
+
+            # The line is "stabilised" — and we hand over to the visual
+            # servo — as soon as EITHER of these is true:
+            #   • we've accepted line_stabilization_samples fresh
+            #     detections in Phase 4 (the line is built from clean
+            #     far-field samples, no point refining it further with
+            #     the noisier near-field ones), OR
+            #   • we've crossed the distance threshold (fallback,
+            #     guards against the case where outlier rejection kills
+            #     most samples and we never reach the count).
+            line_stabilised_by_count = (
+                self.line_stabilization_samples > 0
+                and samples_in_phase4 >= self.line_stabilization_samples
+            )
+            line_stabilised_by_distance = (
+                self.visual_servo_distance > 0.0
+                and distance_to_avg <= self.visual_servo_distance
+            )
+            in_visual_servo = line_stabilised_by_count or line_stabilised_by_distance
+
+            if in_visual_servo and not in_visual_servo_logged:
+                in_visual_servo_logged = True
+                trigger = ('count' if line_stabilised_by_count
+                           else 'distance')
+                self.get_logger().info(
+                    f'   line stabilised ({trigger}: '
+                    f'{samples_in_phase4} samples, d={distance_to_avg:.2f}m) '
+                    f'— switching to camera-frame visual servo'
+                )
+
+            # Fold any new detection into the running average ONLY while
+            # we're in the line-tracking regime. After visual-servo
+            # handover, the running average is frozen — the heading
+            # controller uses the live camera-frame angle directly.
+            #
+            # Two safeguards on Phase 4 updates:
+            #   1. OUTLIER REJECTION — if the sample lands too far from
+            #      the current mean, skip it (likely a 1-frame solvePnP
+            #      glitch).
+            #   2. DISTANCE-WEIGHTED MEAN — far-field samples (cleaner,
+            #      tag is well inside the FOV) contribute more weight
+            #      than near-field samples (noisier corner detection at
+            #      the edges of the FOV).
             msg = self.detected_pose
             fresh = False
-            if msg is not None:
+            outliers_rejected = 0
+            if msg is not None and not in_visual_servo:
                 stamp_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
                 if stamp_ns != last_stamp_ns:
                     age = (self.get_clock().now().nanoseconds - stamp_ns) * 1e-9
                     if age < self.detection_max_age:
-                        avg.update(
-                            msg.pose.position.x, msg.pose.position.y,
-                            msg.pose.orientation.x, msg.pose.orientation.y,
-                            msg.pose.orientation.z, msg.pose.orientation.w,
+                        new_x = msg.pose.position.x
+                        new_y = msg.pose.position.y
+                        sample_offset = math.hypot(new_x - avg.x, new_y - avg.y)
+                        is_outlier = (
+                            self.refinement_outlier_threshold > 0.0
+                            and sample_offset > self.refinement_outlier_threshold
                         )
-                        fresh = True
-                        samples_in_phase4 += 1
+                        if is_outlier:
+                            outliers_rejected += 1
+                            self.get_logger().warning(
+                                f'   refinement outlier rejected '
+                                f'(offset={sample_offset*100:.1f}cm > '
+                                f'{self.refinement_outlier_threshold*100:.0f}cm)'
+                            )
+                        else:
+                            # Linear distance weight, clamped to [min, 1.0].
+                            weight = max(
+                                self.refinement_weight_min,
+                                min(1.0, distance_to_avg
+                                    / self.refinement_weight_full_distance),
+                            )
+                            avg.update(
+                                new_x, new_y,
+                                msg.pose.orientation.x, msg.pose.orientation.y,
+                                msg.pose.orientation.z, msg.pose.orientation.w,
+                                weight=weight,
+                            )
+                            fresh = True
+                            samples_in_phase4 += 1
                     last_stamp_ns = stamp_ns
 
-            if not fresh and had_detection:
-                # Transition: tag was being seen, now lost. Log once, then
-                # keep following the frozen line.
-                had_detection = False
-                self.get_logger().info(
-                    f'   tag lost — continuing on last-known line '
-                    f'(refined with {samples_in_phase4} extra samples '
-                    f'during Phase 4)'
-                )
-            elif fresh and not had_detection:
-                # Came back into FOV.
-                had_detection = True
-                self.get_logger().info('   tag reacquired — resuming line refinement')
+            if not in_visual_servo:
+                # Detection-tracking state machine only matters in the
+                # line-tracking regime. In visual-servo we use the live
+                # camera lookup instead.
+                if not fresh and had_detection:
+                    had_detection = False
+                    self.get_logger().info(
+                        f'   tag lost — continuing on last-known line '
+                        f'(refined with {samples_in_phase4} extra samples '
+                        f'during Phase 4)'
+                    )
+                elif fresh and not had_detection:
+                    had_detection = True
+                    self.get_logger().info('   tag reacquired — resuming line refinement')
 
             perp_yaw = avg.perpendicular_yaw(rx, ry)
             if perp_yaw is None:
@@ -591,14 +736,42 @@ class DockTrigger(Node):
                 )
                 return False
 
-            # Line-tracking (pure-pursuit on the perpendicular line through
-            # the running-average tag). No more visual-servo transition,
-            # no final one-shot align — the running average is refined all
-            # the way down, so the line itself converges on the dock axis.
-            desired_yaw = normalize_angle(
-                perp_yaw - math.atan2(lateral, self.line_lookahead_distance))
-            yaw_err = normalize_angle(desired_yaw - ryaw)
-            omega = self.line_yaw_kp * yaw_err
+            # Heading control: line-tracking (far) → visual servo (near).
+            if in_visual_servo:
+                # Camera-frame closed-loop. omega keeps the tag centred
+                # in the image. The image_angle is low-pass filtered to
+                # reject single-frame solvePnP noise spikes that would
+                # otherwise produce one bad correction per noisy frame
+                # (and force the robot to "un-correct" the next frame).
+                tag_cam = self.lookup_tag_in_camera_optical()
+                if tag_cam is not None:
+                    tx_cam, _, tz_cam = tag_cam
+                    if tz_cam > 0.0:
+                        raw_angle = math.atan2(tx_cam, tz_cam)
+                        if filtered_image_angle is None:
+                            # First valid sample seeds the filter.
+                            filtered_image_angle = raw_angle
+                        else:
+                            a = self.visual_servo_filter_alpha
+                            filtered_image_angle = (
+                                a * raw_angle
+                                + (1.0 - a) * filtered_image_angle
+                            )
+                        omega = -self.visual_servo_kp * filtered_image_angle
+                    else:
+                        # Tag behind the camera (shouldn't happen here).
+                        omega = 0.0
+                else:
+                    # No fresh TF — drive straight rather than blind-steer.
+                    omega = 0.0
+            else:
+                # Line-tracking pure-pursuit on the perpendicular line
+                # through the running-average tag centre.
+                desired_yaw = normalize_angle(
+                    perp_yaw - math.atan2(lateral, self.line_lookahead_distance))
+                yaw_err = normalize_angle(desired_yaw - ryaw)
+                omega = self.line_yaw_kp * yaw_err
+
             omega = max(-self.drive_yaw_max_omega,
                         min(self.drive_yaw_max_omega, omega))
 
