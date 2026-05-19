@@ -1,105 +1,51 @@
 # Notice
 
-OpenAMR Platform Software is part of the OpenAMRobot project.
+OpenAMRobot and OpenAMR are project names maintained by the OpenAMRobot organization.
 
-This repository contains ROS 2 software, simulation, navigation, docking, control integration, drivers, perception modules, configuration, tools, and software documentation for the OpenAMR mobile robot platform.
+This repository contains the ROS 2 software stack for the OpenAMRobot mobile platform: robot description, Gazebo Harmonic simulation, Nav2 navigation, and AprilTag-based autodocking.
 
----
+## Project Ownership
 
-# Project ownership
+The OpenAMRobot organization maintains this repository and its project direction.
 
-OpenAMRobot is an open robotics project focused on affordable, modular, and educational autonomous mobile robot technologies.
+Contributors retain visibility and attribution through GitHub commits, Pull Requests, and release notes where applicable.
 
-GitHub organization:
+Contributions are accepted under the terms described in `CONTRIBUTING.md` and the repository `LICENSE`.
 
-```text
-https://github.com/openAMRobot
-```
+## Third-Party Material
 
----
+This repository depends on third-party open-source packages from the ROS 2 ecosystem and related robotics tools. Third-party dependencies remain under their respective licenses.
 
-# Repository scope
+Do not add third-party code, meshes, models, textures, datasets, marker images, or other assets unless their license is clearly documented.
 
-This repository is for platform software only.
+### Bundled third-party assets
 
-It may include:
+#### AprilTag panel texture
 
-- ROS 2 packages
-- simulation support
-- navigation configuration
-- docking and autodocking logic
-- robot description files
-- software tools
-- software documentation
+- **File:** `ros2/src/openamrobot_docking/models/apriltag_dock/materials/textures/tag0_big.png`
+- **Source:** AprilRobotics `apriltag-imgs` repository ([github.com/AprilRobotics/apriltag-imgs](https://github.com/AprilRobotics/apriltag-imgs))
+- **Family:** tag36h11, ID 0
+- **License:** BSD-2-Clause (as published by AprilRobotics)
+- **Modification status:** unmodified — `tag0_big.png` is the same pattern as `tag0.png` upscaled for use as a Gazebo material texture and as a printable calibration target.
+- **Reason for inclusion:** required to render the AprilTag panel in the docking simulation. Installed by `CMakeLists.txt` into `share/openamrobot_docking/models/apriltag_dock/materials/textures/`.
 
-It should not include:
+#### OpenAMRobot URDF / xacro / STL meshes
 
-- mechanical CAD files
-- PCB design files
-- embedded firmware source code
-- private credentials
-- proprietary third-party assets without permission
+- **Files:** `ros2/src/openamrobot_description/urdf/robo_urdf.urdf.xacro`, `ros2/src/openamrobot_description/urdf/gazebo_control.xacro`, `ros2/src/openamrobot_description/urdf/robot.sdf`, and the full mesh set under `ros2/src/openamrobot_description/meshes/{collision,visual}/`.
+- **Source:** the URDF/xacro and STL mesh set originate from a SolidWorks-exported URDF (sw_urdf_exporter, **Stephen Brawner**) of the OpenAMRobot mobile platform by **Niraj Dhakal**. First packaged for ROS 2 by **Raj Indulkar** in [`rajindulkar22/openamrobot-simulation`](https://github.com/rajindulkar22/openamrobot-simulation); imported into the present `openamrobot_description` package by the OpenAMRobot organization.
+- **License:** the underlying CAD and meshes are OpenAMRobot mobile-platform assets; presumed to be the OpenAMRobot organization's intellectual property. To be confirmed with a formal license declaration in `package.xml`.
+- **Modifications applied in this repository (see `AUTHORS.md` for credit):**
+  - added a `base_footprint` link plus `base_joint` for Nav2-conventional TF
+  - symmetrised the left/right wheel inertials (off-diagonals zeroed and the two wheels made identical) to fix the "robot curves when commanded straight" failure caused by tiny (1e-8-level) asymmetries in the SolidWorks export
+  - set the DiffDrive plugin `wheel_radius` to `0.10 m` (kinematic radius used for `ω = v / r`) while keeping the wheel cylinder **collision** radius at `0.11 m`. The 1 cm difference is intentional: `base_footprint` is at ground level, `base_joint` lifts `base_link` 0.053467 m so the wheel centres sit at z = 0.10 m; a 0.10 m collision cylinder only touches the ground (zero penetration → zero normal force → zero friction), so the 0.11 m collision is what gives ODE the contact depth required for traction
+  - added a `camera_link` plus `camera_rgb_optical_frame` with the standard −π/2, 0, −π/2 optical rotation required by `apriltag_ros::solvePnP`
+  - adjusted the lidar range from 0.40–10 m to 0.15–12 m to span the 10×10 m docking scenario
+  - added a Gazebo RGB camera plugin (640×480 @ 15 Hz, horizontal_fov 1.2 rad)
+  - relative topic names in `gazebo_control.xacro` (`cmd_vel`, `odom`, `scan`, `camera/image_raw`, `joint_states`) so the gz↔ROS bridge resolves consistently when the robot is spawned inside a namespace
+- **Reason for inclusion:** provides the canonical OpenAMRobot mobile-platform description (URDF + meshes), consumed by `openamrobot_gazebo`, `openamrobot_nav2`, and `openamrobot_docking`.
 
----
+## Trademarks and Project Names
 
-# Third-party software
+The names OpenAMRobot and OpenAMR are used to identify the project maintained by the OpenAMRobot organization.
 
-This project may depend on or integrate with third-party open-source software, including but not limited to:
-
-- ROS 2
-- Nav2
-- Gazebo / Gazebo Sim
-- colcon
-- CMake
-- Python packages
-- C++ libraries
-- robotics simulation tools
-
-Each third-party dependency is governed by its own license.
-
----
-
-# Third-party assets
-
-Simulation models, meshes, textures, maps, icons, and other assets must only be added if their source and license are known.
-
-When adding third-party assets, contributors must document:
-
-- asset name
-- source URL
-- author or organization
-- license
-- modification status
-- file location in this repository
-
----
-
-# Contributor responsibility
-
-Contributors must ensure that they have the legal right to contribute any code, configuration, documentation, model, mesh, texture, map, or other asset submitted to this repository.
-
-Do not submit:
-
-- proprietary material without permission
-- confidential material
-- restricted files
-- private credentials
-- copied assets without known license
-- third-party files without attribution
-
----
-
-# Robotics safety notice
-
-This repository may eventually affect real robot behavior.
-
-Users and contributors are responsible for validating:
-
-- robot motion safety
-- navigation behavior
-- docking behavior
-- simulation-to-real-world assumptions
-- hardware compatibility
-- deployment environment safety
-
-Software that works in simulation must not be assumed safe for real robot operation without additional testing.
+Use of these names should not imply official endorsement, certification, or partnership unless explicitly approved by the maintainers.

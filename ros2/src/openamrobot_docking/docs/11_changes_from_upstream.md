@@ -294,16 +294,16 @@ After the initial fixes documented above, the repository was extended with a **c
 
 | Path | Purpose |
 |---|---|
-| `omr_description/` | New ROS 2 package providing the canonical OMR robot description (URDF/xacro, STL meshes). Spawned at runtime by the simulation launch via `ros_gz_sim create` |
-| `simulation/` | Whole Gazebo Harmonic simulation: world, configs, launch (robot description now provided by `omr_description`) |
+| `openamrobot_description/` | New ROS 2 package providing the canonical OMR robot description (URDF/xacro, STL meshes). Spawned at runtime by the simulation launch via `ros_gz_sim create` |
+| `simulation/` | Whole Gazebo Harmonic simulation: world, configs, launch (robot description now provided by `openamrobot_description`) |
 | `simulation/launch/simulation.launch.py` | Top-level sim bringup with `spawn_x` / `spawn_y` / `spawn_yaw` launch arguments and auto-derived dock pose |
 | `simulation/worlds/docking_world.sdf` | 10×10 m room, AprilTag dock against north wall (robot is spawned from the URDF at launch time, not declared inside the world) |
 | `simulation/models/apriltag_dock/` | 0.40 × 0.40 m AprilTag panel, textured with `tag0_big.png` |
-| `simulation/config/nav2_sim_full.yaml` | Full Nav2 + opennav_docking + slam_toolbox params for the sim (softer decel for the omr_description casters) |
+| `simulation/config/nav2_sim_full.yaml` | Full Nav2 + opennav_docking + slam_toolbox params for the sim (softer decel for the openamrobot_description casters) |
 | `simulation/config/tags_36h11_sim.yaml` | AprilTag config (`size: 0.40`) |
 | `simulation/config/ros_gz_bridge.yaml` | gz↔ROS topic bridge |
 | `simulation/config/slam_toolbox_params.yaml` | SLAM in mapping mode |
-| `simulation/config/simulation.rviz` | RViz layout with `ThirdPersonFollower` camera view of `base_footprint` |
+| `simulation/config/simulation.rviz` | RViz layout with `ThirdPersonFollower` camera view of `base_link` |
 | `launch/apriltag_sim.launch.yml` | apriltag_ros launch for sim (no `camera_ros`) |
 | `scripts/kill_sim.sh` | SIGKILL cleanup helper for zombie sim processes |
 | `docs/12_lessons_learned.md` | Story of every sim issue encountered + fix |
@@ -315,9 +315,9 @@ After the initial fixes documented above, the repository was extended with a **c
 | File | What changed |
 |---|---|
 | `scripts/dock_trigger.py` | **Completely rewritten** as a 4-phase sequencer (Nav2 to staging → camera-frame centring scan + running-average filter → align spin → line-tracking pure-pursuit then final-align + straight-line). Earlier iterations included a 7-phase pipeline with auto-calibration low-pass and a reverse-and-realign safety loop; both were retired in favour of the continuous pure-pursuit controller. See `08_sequencer_4phase.md`. |
-| `config/dock_trigger.yaml` | Now declares: dock pose, staging distance, scan parameters (`scan_rotation_speed`, `scan_consecutive_target`, `scan_centring_tolerance`, `scan_centring_kp`), filter parameters (`filter_num_samples`, `filter_max_collect_time`), spin parameters (`spin_kp`, `spin_max_omega`, `spin_yaw_tolerance`), line-tracking parameters (`drive_speed`, `line_yaw_kp`, `line_lookahead_distance`, `drive_yaw_max_omega`, `visual_servo_distance`, `docking_distance`). |
+| `config/dock_trigger.yaml` | Now declares: dock pose, staging distance, scan parameters (`scan_rotation_speed`, `scan_consecutive_target`, `scan_centring_tolerance`, `scan_centring_kp`), filter parameters (`filter_num_samples`, `filter_max_collect_time`), spin parameters (`spin_kp`, `spin_max_omega`, `spin_yaw_tolerance`), line-tracking parameters (`drive_speed`, `line_yaw_kp`, `line_lookahead_distance`, `drive_yaw_max_omega`, `docking_distance`). |
 | `CMakeLists.txt` | Installs `simulation/` directory and `dock_trigger.py`/`kill_sim.sh` scripts |
-| `package.xml` | Added `slam_toolbox`, `ros_gz_sim`, `ros_gz_bridge`, `ros_gz_image`, `nav2_msgs`, `tf2_ros`, `omr_description`, `xacro` dependencies |
+| `package.xml` | Added `slam_toolbox`, `ros_gz_sim`, `ros_gz_bridge`, `ros_gz_image`, `nav2_msgs`, `tf2_ros`, `openamrobot_description`, `xacro` dependencies |
 
 ### Key configuration choices for the simulation
 

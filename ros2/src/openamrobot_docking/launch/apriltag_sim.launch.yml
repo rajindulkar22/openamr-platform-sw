@@ -1,11 +1,19 @@
 launch:
 # AprilTag detection for simulation.
-# Does NOT start camera_ros — the camera is provided by Gazebo via ros_gz_bridge.
-# Passes raw image directly to AprilTagNode (no rectification needed in simulation).
 #
-# Topic conventions in this integration follow the openamrobot_gazebo bridge:
-#   - image: /rgb_image  (bridged from gz /rgb_image)
-#   - camera_info: /camera/camera_info  (bridged from gz /camera/camera_info)
+# Does NOT start camera_ros — the camera is provided by Gazebo via
+# ros_gz_bridge. Passes the raw image directly to AprilTagNode (no
+# rectification needed in simulation).
+#
+# Subscribes to:
+#   /rgb_image          (image, remapped from /apriltag/image_rect)
+#   /camera_info        (intrinsics, bridged in openamrobot_docking.launch.py)
+# Publishes:
+#   /apriltag/detections           (apriltag_msgs/AprilTagDetectionArray)
+#   /tf  (camera_optical_frame -> charging_dock_apriltag)
+#
+# Detector parameters (family, tag size, IDs, frame names) come from
+# config/tags_36h11_sim.yaml.
 
 - node:
     pkg: apriltag_ros
@@ -14,13 +22,6 @@ launch:
     namespace: apriltag
     param:
     - from: $(find-pkg-share openamrobot_docking)/config/tags_36h11_sim.yaml
-    # Note on camera_info: image_transport::CameraSubscriber derives the
-    # camera_info topic from the image topic, BEFORE remaps are applied.
-    # With image_rect remapped to /rgb_image, it ends up subscribing to
-    # /camera_info — which doesn't exist on Raj's bridge (he publishes
-    # on /camera/camera_info). A topic_tools relay in
-    # openamrobot_docking.launch.py mirrors the two, so this YAML can
-    # focus on the image remap only.
     remap:
     - from: /apriltag/image_rect
       to: /rgb_image

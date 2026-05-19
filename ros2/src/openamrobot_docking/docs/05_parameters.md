@@ -1,241 +1,189 @@
-# Parameters Reference
+# Parameters reference
 
-This file summarises the parameters most commonly tuned in this
-repository, both for the **real-robot config** and the **simulation**.
-It is not exhaustive — see the YAML files for the full list.
+Every YAML knob that `openamrobot_docking` reads, grouped by config file. Defaults are the values shipped in this package and tuned for the simulation.
 
-## AprilTag detection
+The YAML files this doc covers:
 
-### Real robot — `config/tags_36h11.yaml`
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `family` | `36h11` | Tag family |
-| `size` | `0.0555` | **Tag edge size in metres — measure your printed tag** |
-| `max_hamming` | `0` | Bit-error tolerance (0 = strict) |
-| `detector.threads` | `1` | CPU threads for detection |
-| `detector.decimate` | `2.0` | Image down-sampling factor (lower = more accurate, slower) |
-| `detector.blur` | `0.0` | Gaussian blur σ before detection |
-| `detector.refine` | `True` | Sub-pixel corner refinement |
-| `tag.ids` | `[0]` | Tag IDs to detect |
-| `tag.frames` | `[charging_dock_apriltag]` | TF frame names (must match `child_frame` in `docking_pose_publisher.yaml`) |
-
-### Simulation — `simulation/config/tags_36h11_sim.yaml`
-
-Same fields, with these differences:
-
-| Parameter | Sim value | Why |
-|---|---|---|
-| `size` | `0.40` | Matches the panel size in `simulation/models/apriltag_dock/model.sdf` |
-| `image_transport` | `raw` | Sim camera publishes raw, no compression |
-| `decimate` | `1.0` | Camera is already low-resolution, no need to downsample |
-
-## Detected dock pose publisher — `config/docking_pose_publisher.yaml`
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `parent_frame` | `map` | Frame in which to publish the pose |
-| `child_frame` | `charging_dock_apriltag` | Tag's TF frame (must match `tag.frames` in the AprilTag config) |
-| `output_topic` | `detected_dock_pose` | PoseStamped output |
-| `publish_rate` | `10.0` | Hz |
-
-## Dock trigger — `config/dock_trigger.yaml`
-
-This file is consumed by `scripts/dock_trigger.py`'s 4-phase sequencer.
-All parameters affect the simulation's docking flow.
-
-### Trigger / action params
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `trigger_topic` | `dock_trigger` | Bool topic that triggers the sequence |
-| `undock_on_false` | `false` | If true, `Bool false` triggers `UndockRobot` |
-| `dock_type` | `openamrobot_dock` | Passed to `UndockRobot` action |
-
-### Dock pose (must match `nav2_sim_full.yaml`'s `home_dock.pose`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `dock_pose_x` | `4.0` | Dock x in **map** frame |
-| `dock_pose_y` | `8.9` | Dock y in **map** frame |
-| `dock_pose_yaw` | `1.5707` | Dock approach yaw (= robot heading when docked) |
-
-> **Note.** `simulation.launch.py` overrides these three at launch time
-> from the `spawn_x`, `spawn_y`, `spawn_yaw` arguments so the dock keeps
-> pointing at the same physical tag regardless of where the robot
-> spawns. The yaml defaults match the default spawn pose `(-4, -4, 0)`.
-
-### Staging / docking distances
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `staging_distance` | `2.5` | Distance (m) from the dock at which the robot first stops (phase 1) |
-| `staging_hold_seconds` | `1.0` | Hold time at staging before starting tag scan |
-| `docking_distance` | `0.9` | Final distance (m) from the running-average tag at which the advance phase stops. Bumped from 0.6 → 0.9 to keep the robot out of the near-field regime where tiny lateral motion produces large image-angle changes |
-
-### Phase 2 — tag search and centring scan
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `scan_rotation_speed` | `0.3` | Open-loop scan rotation rate (rad/s) and clamp on the centring P-loop |
-| `scan_consecutive_target` | `5` | Centred frames required in a row before the scan exits |
-| `scan_centring_tolerance` | `0.035` | Tag must be within this angle (rad ≈ 2°) of image centre to count as "centred" |
-| `scan_centring_kp` | `1.0` | P-gain on the camera-frame image angle during centring |
-
-### Phase 2 — initial filter
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `detection_topic` | `/detected_dock_pose` | PoseStamped from `detected_dock_pose_publisher` |
-| `detection_max_age` | `1.5` | Drop tag detections older than this (s) |
-| `filter_num_samples` | `40` | Detections folded into the running-average tag pose during phase 2 |
-| `filter_max_collect_time` | `6.0` | Max seconds spent collecting samples — 40 samples at 10 Hz needs ≥ 4 s with margin for drops |
-
-### Phase 3 — spin to perpendicular
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `spin_kp` | `1.5` | Angular P gain for the in-place spin |
-| `spin_max_omega` | `0.3` | Clamp on spin angular velocity (rad/s) |
-| `spin_yaw_tolerance` | `0.02` | Spin completion tolerance (~1.1°) |
-
-### Phase 4 — line-tracking advance + straight-line final
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `drive_speed` | `0.05` | Forward speed (m/s) during phase 4. Lowered to reduce slip with the omr_description casters |
-| `line_yaw_kp` | `2.5` | Yaw P gain in the pure-pursuit phase: `omega = line_yaw_kp · (desired_yaw − robot_yaw)` |
-| `line_lookahead_distance` | `0.3` | Pure-pursuit lookahead. `desired_yaw = perp_yaw − atan2(lateral, lookahead)`. Smaller = more aggressive lateral convergence |
-| `drive_yaw_max_omega` | `0.3` | Clamp on omega during phase 4 |
-| `visual_servo_distance` | `1.4` | At distance < this value, the controller does a one-shot final-align spin, then drives forward with `omega = 0` until `docking_distance`. **Must be > `docking_distance`** for the straight-line phase to engage |
-| `drive_rate_hz` | `20.0` | Control loop rate for phases 2/3/4 |
-| `cmd_vel_topic` | `/cmd_vel_nav` | Topic for direct cmd_vel (goes through smoother + collision monitor) |
-
-The legacy parameter `drive_yaw_kp` is still declared for backwards
-compatibility with older code paths but is **not used by the
-line-tracking advance**.
-
-### Removed parameters
-
-These were used by earlier iterations (auto-calibration low-pass,
-reverse-and-realign safety loop) and are no longer relevant:
-
-`auto_cal_enabled`, `auto_cal_alpha`, `realign_enabled`,
-`realign_lateral_threshold`, `realign_reverse_speed`,
-`realign_reverse_distance`, `realign_reach_tolerance`,
-`realign_min_distance`, `realign_max_retries`, `realign_omega`.
-
-## Real-robot docking server — `config/openamrobot_docking.yaml`
-
-### Top-level
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `controller_frequency` | `50.0` | Control loop frequency (Hz) |
-| `initial_perception_timeout` | `25.0` | Time to wait for tag detection before failing |
-| `dock_approach_timeout` | `30.0` | Time to approach dock before failing |
-| `max_retries` | `3` | Max docking attempts |
-| `base_frame` | `base_footprint` | Robot base frame |
-| `fixed_frame` | `odom` | Stable frame for short-term motion |
-
-### `home_dock_plugin` (`opennav_docking::SimpleChargingDock`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `docking_threshold` | `0.25` | Robot stops when within this distance of the (corrected) dock pose |
-| `staging_x_offset` | `-0.7` | Staging position offset along dock_yaw (negative = behind dock) |
-| `use_external_detection_pose` | `true` | Use `/detected_dock_pose` instead of static dock pose |
-| `external_detection_translation_x` | `0.18` | Shift the dock pose in dock-frame X (toward robot) — see `12_lessons_learned.md` |
-| `external_detection_translation_y` | `0.0` | Lateral shift |
-| `external_detection_rotation_pitch` | `-1.5707` | Tag-to-dock frame rotation (pitch) |
-| `external_detection_rotation_roll` | `-1.5707` | Tag-to-dock frame rotation (roll) |
-| `external_detection_rotation_yaw` | `0.0` | Tag-to-dock frame rotation (yaw) |
-| `filter_coef` | `0.5` | Low-pass filter on detected pose (higher = more responsive, noisier) |
-| `use_stall_detection` | `false` | Stop if robot physically stalled |
-
-### Controller (used by `opennav_docking`'s `controlled_approach`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `dock_collision_threshold` | `0.3` | Stop distance for the controller's internal collision check |
-| `use_collision_detection` | `false` | Enable controller collision check |
-| `k_phi` | (varies) | Heading correction gain (graceful_controller) |
-| `k_delta` | (varies) | Cross-track correction gain |
-| `v_linear_min` / `v_linear_max` | (varies) | Speed limits for the approach |
-
-### `home_dock` (the dock database entry)
-
-| Parameter | Meaning |
-|---|---|
-| `frame: map` | Frame the pose is expressed in |
-| `pose: [x, y, yaw]` | Map-frame coords. **Set this from your tag's measured map position.** |
-
-## Simulation Nav2 + costmaps — `simulation/config/nav2_sim_full.yaml`
-
-### Controller (RegulatedPurePursuitController)
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `desired_linear_vel` | `0.55` | Target forward speed (m/s) during nav |
-| `lookahead_dist` | `0.5` | Pure-pursuit carrot distance (m) |
-| `rotate_to_heading_angular_vel` | `0.5` | Angular velocity during initial rotate-to-heading |
-| `max_angular_accel` | `0.6` | Conservative — limits lateral inertial torque on the 2-wheel-balanced robot |
-| `use_rotate_to_heading` | `true` | Rotate first if heading-to-path > `rotate_to_heading_min_angle` |
-| `rotate_to_heading_min_angle` | `0.785` | 45° threshold |
-
-### Planner (NavfnPlanner)
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `tolerance` | `1.0` | Accept any free cell within this distance of goal if exact goal cell is blocked |
-| `use_astar` | `true` | A* (more robust than Dijkstra here) |
-| `allow_unknown` | `true` | Plan through unknown cells (combined with `track_unknown_space: false`) |
-
-### Costmap inflation
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `inflation_radius` | `0.45` | Inflated radius around obstacles (m) |
-| `cost_scaling_factor` | `8.0` | Sharp falloff → less plan wobble; cells past ~25 cm from obstacle have ~zero cost |
-
-### Velocity smoother
-
-| Parameter | Value (linear, lateral, angular) | Notes |
-|---|---|---|
-| `max_accel` | `[1.2, 0.0, 1.5]` | |
-| `max_decel` | `[-0.5, 0.0, -1.0]` | Softer linear decel (-0.5 instead of -1.2) since the omr_description full-mesh casters drag more — keeps the staging-zone approach from overshooting |
-| `max_velocity` | `[0.7, 0.0, 1.2]` | |
-| `min_velocity` | `[-0.7, 0.0, -1.2]` | |
-
-### `home_dock` for the sim
-
-```yaml
-home_dock:
-  frame: map
-  pose: [4.0, 8.9, 1.5707]    # Must match dock_pose_* in dock_trigger.yaml
+```
+config/
+├── dock_trigger.yaml              ← 4-phase sequencer (the bulk of this doc)
+├── tags_36h11_sim.yaml            ← AprilTag detector (simulation)
+└── docking_pose_publisher.yaml    ← TF → PoseStamped publisher
 ```
 
-## Where the parameters interact
+---
+
+## `config/dock_trigger.yaml` — the 4-phase sequencer
+
+Read by `scripts/dock_trigger.py`. Every parameter is also commented in-place in the YAML.
+
+### Trigger plumbing
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `trigger_topic` | `dock_trigger` | Bool topic that fires the sequence. `true` = dock. |
+| `undock_on_false` | `false` | If `true`, `Bool false` triggers undocking (calls `UndockRobot`). Off by default — the 4-phase pipeline doesn't yet implement undock. |
+
+### Dock pose in the `map` frame
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `dock_pose_x` | `4.899` | Dock x in the **map** frame |
+| `dock_pose_y` | `0.0` | Dock y in the **map** frame |
+| `dock_pose_yaw` | `0.0` | **Approach yaw** — the heading the robot has when docked (facing the tag) |
+
+> The simulation places the AprilTag panel at world `(4.899, 0, 0.5)` with the tag plane normal pointing `-x`. AMCL is initialised at map `(0, 0, 0)` = world `(0, 0, 0)`, so map ≡ world for this scenario. The robot approaches from `-x` heading `+x` → approach yaw = `0`.
+
+### Phase 1 — Nav2 staging
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `staging_distance` | `1.5` | Distance (m) in front of the dock at which Nav2 stops. With a 0.40 m tag and 1.047 rad camera FOV, 1.5 m gives ~120 px of tag in the image — comfortable for sub-pixel solvePnP. |
+| `staging_hold_seconds` | `1.0` | Quiet time at staging before the tag scan begins (velocity decay + image stabilisation). |
+
+### Phase 2 — tag search + initial filter
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `scan_rotation_speed` | `0.3` | Open-loop scan rotation rate (rad/s) and clamp on the centring P-loop. |
+| `scan_consecutive_target` | `5` | Centred-frame count required in a row before the scan exits. |
+| `scan_centring_tolerance` | `0.035` | Tag must be within this many rad (~2°) of image centre to count as centred. |
+| `scan_centring_kp` | `1.0` | P-gain on the camera-frame image angle during the closed-loop centring. |
+| `detection_topic` | `/detected_dock_pose` | PoseStamped topic from `detected_dock_pose_publisher`. |
+| `detection_max_age` | `1.5` | Drop detections older than this (s) — staleness guard. |
+| `filter_num_samples` | `40` | Number of fresh detections folded into the running-average tag pose during phase 2. |
+| `filter_max_collect_time` | `6.0` | Max seconds spent collecting samples. 40 samples at 10 Hz needs ≥ 4 s; the extra 2 s is margin for drops. |
+
+### Phase 3 — align spin
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `spin_kp` | `1.5` | Angular P gain for the in-place spin to `perpendicular_yaw`. |
+| `spin_max_omega` | `0.3` | Clamp on the spin angular velocity (rad/s). |
+| `spin_yaw_tolerance` | `0.02` | Exit when `\|yaw_err\| < this` (~1.1°). |
+
+### Phase 4 — line-tracking advance
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `docking_distance` | `0.9` | Final distance (m) from the running-average tag at which Phase 4 stops. The robot ends ~90 cm in front of the tag, perpendicular. |
+| `drive_speed` | `0.05` | Forward speed (m/s) during Phase 4, linearly tapered inside `2 × docking_distance` so the robot eases into the final stop. |
+| `line_yaw_kp` | `2.5` | Yaw P gain: `omega = line_yaw_kp · (desired_yaw − robot_yaw)`. |
+| `line_lookahead_distance` | `0.3` | Pure-pursuit lookahead. `desired_yaw = perp_yaw − atan2(lateral, lookahead)`. Smaller = more aggressive lateral convergence (steeper desired heading at the same offset). |
+| `drive_yaw_max_omega` | `0.3` | Clamp on omega during Phase 4 (rad/s). |
+| `drive_rate_hz` | `20.0` | Control loop rate for phases 2/3/4. |
+| `cmd_vel_topic` | `/cmd_vel` | Topic where dock_trigger publishes `Twist` during phases 2/3/4. Published directly on `/cmd_vel` because Raj's Nav2 doesn't run a `velocity_smoother` subscribed to `/cmd_vel_nav`. |
+
+### Phase 4 — robust running-average update
+
+The running-average tag pose is refined during Phase 4 by each fresh detection. Two safeguards make this update **robust against noisy near-field detections** (the camera sits slightly above the tag, so as the robot approaches the tag drifts toward the bottom of the FOV and solvePnP becomes noisier):
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `refinement_outlier_threshold` | `0.30` | A new detection that lands more than this many metres from the current running-average position (XY) is SKIPPED — almost certainly a single-frame solvePnP glitch. Typical legitimate jitter is ~5 cm, so 0.30 m is a generous cutoff. Set to 0 to disable. |
+| `refinement_weight_min` | `0.1` | Lower bound on the per-sample weight in the distance-weighted mean. |
+| `refinement_weight_full_distance` | `1.5` | Distance (m) at which a sample contributes full weight (=1.0). Closer samples have weight = `clamp(distance / full_distance, weight_min, 1.0)`. |
+
+The weighted mean keeps **all** accepted detections in the running average but lets clean far-field samples dominate over noisier near-field ones. At 1.5 m a sample has weight 1.0; at 0.75 m it has weight 0.5; at 0.15 m it's clamped to the 0.1 floor.
+
+### Phase 4 — visual-servo handover
+
+Once the line is stable enough, Phase 4 hands the heading controller over from map-frame line-tracking to **camera-frame visual servoing** (closed-loop on the image-frame angle to the tag). This last leg of the approach doesn't depend on the noisy near-field solvePnP map-frame outputs.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `line_stabilization_samples` | `25` | Number of accepted Phase-4 refinements after which the line is declared "stabilised" and the visual servo takes over. Set to 0 to disable (only the distance trigger remains). |
+| `visual_servo_distance` | `1.0` | Distance (m) below which the visual servo takes over **regardless** of refinement count — failsafe for the case where outlier rejection kills most samples. Set to 0 to disable (only the count trigger remains). |
+| `visual_servo_kp` | `0.6` | P gain on the image-frame angle: `omega = −visual_servo_kp · atan2(X_optical, Z_optical)`. |
+| `visual_servo_filter_alpha` | `0.2` | Low-pass smoothing on the image-frame angle (rejects single-frame solvePnP spikes). `0.0 < alpha ≤ 1.0`. Lower = more smoothing, slower response. |
+
+The handover trigger is **first-of**: whichever of `line_stabilization_samples` or `visual_servo_distance` happens first. From that point the running-average is frozen and `omega` comes from the live camera-frame angle.
+
+### Tuning intuitions
+
+- **Robot oscillates near the line** → increase `line_lookahead_distance` (smoother heading) or decrease `line_yaw_kp`.
+- **Robot converges too slowly to the line** → decrease `line_lookahead_distance` (more aggressive) or increase `line_yaw_kp` (watch `drive_yaw_max_omega` saturation).
+- **Visual servo wobbles** → lower `visual_servo_kp` (e.g. 0.4) or lower `visual_servo_filter_alpha` (e.g. 0.1).
+- **Visual servo is too sluggish** → raise `visual_servo_kp` or raise `visual_servo_filter_alpha`.
+- **One bad detection visibly shifts the line** → tighten `refinement_outlier_threshold` (e.g. 0.20 m).
+- **Far samples don't dominate enough** → raise `refinement_weight_full_distance` (e.g. 2.0).
+- **Handover happens too late, robot already misaligned** → lower `line_stabilization_samples` (e.g. 15) or raise `visual_servo_distance`.
+- **Handover happens too early, line wasn't established** → raise `line_stabilization_samples` (e.g. 35).
+- **Robot overshoots the staging zone** → softer linear decel in `velocity_smoother`, or reduce `staging_distance`.
+- **Phase 2 timeouts** → either the tag isn't in the camera, or the detector isn't getting `/camera_info` (see [`09_troubleshooting.md`](09_troubleshooting.md)).
+
+---
+
+## `config/tags_36h11_sim.yaml` — AprilTag detector (simulation)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `family` | `36h11` | Tag family. |
+| `size` | `0.40` | **Tag side length** in metres — measure the panel face in `models/apriltag_dock/model.sdf`. Must match or solvePnP returns wrong distances. |
+| `max_hamming` | `0` | Bit-error tolerance (0 = strict). |
+| `image_transport` | `raw` | Sim camera publishes raw uncompressed, no rectification needed. |
+| `detector.threads` | `2` | CPU threads for detection. |
+| `detector.decimate` | `1.0` | Image down-sampling factor. 1.0 = no decimation (camera is already 640×480). |
+| `detector.blur` | `0.0` | Pre-detection Gaussian blur σ. |
+| `detector.refine` | `True` | Sub-pixel corner refinement. |
+| `detector.sharpening` | `0.25` | Pre-detection sharpening. |
+| `pose_estimation_method` | `pnp` | Use solvePnP for the tag → camera transform. |
+| `tag.ids` | `[0]` | Tag IDs to detect (filter — others ignored). |
+| `tag.frames` | `[charging_dock_apriltag]` | TF child frame name for each tag. Must match `docking_pose_publisher.yaml` `child_frame`. |
+
+---
+
+## `config/docking_pose_publisher.yaml` — TF → PoseStamped bridge
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `parent_frame` | `map` | The frame in which the dock pose is published. |
+| `child_frame` | `charging_dock_apriltag` | The tag's TF frame. Must match `tag.frames` in the AprilTag YAML. |
+| `output_topic` | `detected_dock_pose` | PoseStamped output. Must match `detection_topic` in `dock_trigger.yaml`. |
+| `publish_rate` | `10.0` | Hz. |
+
+---
+
+## Where these parameters interact
 
 ```
 config/dock_trigger.yaml
-  dock_pose_*  ───────────────  Must equal  ────────  nav2_sim_full.yaml home_dock.pose
-                                                       (but simulation.launch.py overrides
-                                                        from spawn pose automatically)
-  detection_topic  ───────────  Must equal  ────────  docking_pose_publisher.yaml output_topic
-  visual_servo_distance  ─────  Must be >   ────────  docking_distance (so the straight-line
-                                                       phase actually engages before stop)
+  dock_pose_x/y/yaw  ──────  ground truth: the AprilTag panel pose in walled_world.sdf
 
-simulation/models/apriltag_dock/model.sdf
-  box size  ──────────────────  Must equal  ────────  tags_36h11_sim.yaml size
+  detection_topic  ─────────  Must equal  ────────  docking_pose_publisher.yaml output_topic
 
-omr_description/urdf/omr_robot.urdf.xacro
-  camera_rgb_optical_frame  ───  Used by  ──────────  apriltag_ros (publishes pose in this frame)
-                                 and by  ───────────  detected_dock_pose_publisher (looks up TF
-                                                       map → charging_dock_apriltag)
-                                 and by  ───────────  dock_trigger.py (camera-frame visual
-                                                       centring during the scan)
+  scan_centring_tolerance  ─  Tighter than  ──────  Phase 4's line_lookahead/yaw — otherwise
+                                                     Phase 4 wobbles around the line
+
+config/tags_36h11_sim.yaml
+  size  ────────────────────  Must equal  ────────  models/apriltag_dock/model.sdf
+                                                     <box><size>0.001 0.40 0.40</size> face
+
+  tag.frames[0]  ───────────  Must equal  ────────  docking_pose_publisher.yaml child_frame
+                                                     and dock_trigger.py's TF lookup
+                                                     target ('charging_dock_apriltag')
+
+URDF (openamrobot_description)
+  camera_optical_frame  ────  Used by  ──────────  apriltag_ros (tag pose published here)
+                                 and by  ─────────  detected_dock_pose_publisher (lookup
+                                                     base for the map-frame transform)
+                                 and by  ─────────  dock_trigger.py (camera-frame centring)
+
+  base_link             ────  Used by  ──────────  dock_trigger.py (map → base_link lookup
+                                                     for the robot's current pose)
 ```
 
-When you change one of these, update the matching parameter in the
-corresponding file.
+When you change one value, update the matching consumer.
+
+---
+
+## Real-robot deployment
+
+To port to a real robot:
+
+1. Use `tags_36h11.yaml` instead of `tags_36h11_sim.yaml`. Differences:
+   - `size` set to **your measured printed tag side** (in metres, side of the outer black square — typically 0.05–0.20 m for indoor robots).
+   - `decimate` may need to be `2.0` or higher to keep the detector real-time on the robot's CPU.
+   - `image_transport: compressed` (typical) — `apriltag.launch.yml` includes `image_proc` rectification.
+2. Set `dock_pose_x/y/yaw` to the **measured map-frame pose** of your physical dock.
+3. All other 4-phase parameters carry over unchanged — the pipeline is hardware-agnostic.

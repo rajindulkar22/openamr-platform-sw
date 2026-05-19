@@ -76,7 +76,7 @@ map → odom → base_link → camera → charging_dock_apriltag
 
 `apriltag_ros` publishes the last hop (`camera → charging_dock_apriltag`). SLAM publishes `map → odom`. Odometry publishes `odom → base_link`. **Nobody publishes `base_link → camera`** — and on the real-robot launch (`openamrobot_docking.launch.py`) this static transform was never wired up. `lookupTransform("map", "charging_dock_apriltag", ...)` returned `LookupException` on every cycle. The node silently caught the exception and didn't publish.
 
-**How we fixed it:** In the simulation, the URDF declares `base_link → camera_rgb_frame → camera_rgb_optical_frame` as fixed joints, and `robot_state_publisher` publishes these as `/tf_static`. For real-robot deployments, the user must add a `static_transform_publisher` (or include it in the URDF processed by `robot_state_publisher`) measuring the camera's mounting offset from `base_link`.
+**How we fixed it:** In the simulation, the URDF declares `base_link → camera_rgb_frame → camera_optical_frame` as fixed joints, and `robot_state_publisher` publishes these as `/tf_static`. For real-robot deployments, the user must add a `static_transform_publisher` (or include it in the URDF processed by `robot_state_publisher`) measuring the camera's mounting offset from `base_link`.
 
 **Lesson:** A node that "starts cleanly" is not the same as a node that's working. When a TF-dependent node produces no output, always run `ros2 run tf2_ros tf2_echo <parent> <child>` for every hop in the expected chain. The first hop that fails is your missing piece. Catch-and-ignore on `LookupException` is convenient for transient startup races but hides permanent breakage — log at least once per second when transforms can't be resolved.
 
@@ -295,7 +295,7 @@ Compensate for the lower pixel count by enlarging the physical AprilTag from 0.2
 
 ```xml
 <!-- SDF -->
-<gz_frame_id>camera_rgb_optical_frame</gz_frame_id>
+<gz_frame_id>camera_optical_frame</gz_frame_id>
 ```
 
 ```xml
@@ -303,11 +303,11 @@ Compensate for the lower pixel count by enlarging the physical AprilTag from 0.2
 <joint name="camera_rgb_optical_joint" type="fixed">
   <origin xyz="0 0 0" rpy="-1.5707 0 -1.5707"/>
   <parent link="camera_rgb_frame"/>
-  <child  link="camera_rgb_optical_frame"/>
+  <child  link="camera_optical_frame"/>
 </joint>
 ```
 
-Now `apriltag_ros` publishes `camera_rgb_optical_frame → charging_dock_apriltag`, which composes cleanly with the URDF's static transforms back to `base_link`.
+Now `apriltag_ros` publishes `camera_optical_frame → charging_dock_apriltag`, which composes cleanly with the URDF's static transforms back to `base_link`.
 
 **Lesson:** REP-103 specifies that camera-related frames come in pairs: a body frame (mounted on the robot, ROS-style axes) and an optical frame (rotated, OpenCV-style axes). Every camera-driven library you'll use (apriltag, OpenCV, image_pipeline) expects the *optical* frame. Always wire them up as a pair and use the optical one in the camera_info / image headers.
 
@@ -661,16 +661,16 @@ use_stall_detection: false
 ## Lesson 25: The URDF root spawn z is not the same as `base_link` z
 
 **Context:** When migrating the simulation from an inline SDF model
-(`simulation/models/omr_robot/model.sdf`) to a SolidWorks-exported
-URDF/xacro (`omr_description/urdf/omr_robot.urdf.xacro`), we
-introduced a `base_footprint` link as the URDF root. The xacro
+(`simulation/models/openamrobot/model.sdf`) to a SolidWorks-exported
+URDF/xacro (`openamrobot_description/urdf/openamrobot.urdf.xacro`), we
+introduced a `base_link` link as the URDF root. The xacro
 applies a `base_joint` of `xyz="0 0 0.053467"` between
-`base_footprint` and `base_link`, so that `base_link` sits 5.3 cm
+`base_link` and `base_link`, so that `base_link` sits 5.3 cm
 above the ground projection and the wheel centres land exactly at
 z = `wheel_radius` = 0.1 m.
 
 We initially kept the old spawn argument `-z 0.053467`. With
-`base_footprint` (the URDF root) spawned at z = 0.053467, `base_joint`
+`base_link` (the URDF root) spawned at z = 0.053467, `base_joint`
 then lifted `base_link` to z = 0.107 and the wheel centres to
 z = 0.153 — floating 5.3 cm above the ground.
 
@@ -684,7 +684,7 @@ camera was 5.3 cm higher than expected and the simulated
 
 **Why it happened:** SDF and URDF have different conventions. In the
 inline SDF, `base_link` was the root and the spawn pose set it
-directly. In URDF with `base_footprint` as the root, the spawn pose
+directly. In URDF with `base_link` as the root, the spawn pose
 sets the ground projection, and the URDF lifts `base_link` from
 there.
 
@@ -768,7 +768,7 @@ configuration is poor.
 
 **How we fixed it:** Made the scan a closed-loop centring
 controller using the camera-frame angle directly. We look up TF
-`camera_rgb_optical_frame → charging_dock_apriltag`, compute the
+`camera_optical_frame → charging_dock_apriltag`, compute the
 horizontal angle in the image as `atan2(X_optical, Z_optical)`, and
 rotate the robot to bring it within ±2°. The scan exits only when
 the tag has been within tolerance for `scan_consecutive_target`

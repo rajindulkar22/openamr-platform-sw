@@ -21,8 +21,8 @@ the real robot, either restore the older single-action `dock_trigger.py`
 
 ```
 openamrobot-docking-main/
-├── omr_description/                  ← canonical OMR robot description
-│   ├── urdf/omr_robot.urdf.xacro     (URDF/xacro + base_footprint +
+├── openamrobot_description/                  ← canonical OMR robot description
+│   ├── urdf/openamrobot.urdf.xacro     (URDF/xacro + base_link +
 │   ├── urdf/gazebo_control.xacro      DiffDrive, gpu_lidar, camera with
 │   └── meshes/{visual,collision}/     optical frame, JointStatePublisher)
 │
@@ -38,7 +38,7 @@ openamrobot-docking-main/
     │   ├── openamrobot_docking.yaml         # real-robot Nav2 + docking_server
     │   └── tags_36h11.yaml                  # real-robot AprilTag config
     ├── simulation/
-    │   ├── launch/simulation.launch.py      # spawns from omr_description
+    │   ├── launch/simulation.launch.py      # spawns from openamrobot_description
     │   ├── worlds/docking_world.sdf         # walls + AprilTag dock (no robot)
     │   ├── models/apriltag_dock/            # tag panel + tag36h11 texture
     │   └── config/
@@ -52,8 +52,8 @@ openamrobot-docking-main/
 ```
 
 Note: the OMR robot description used to live as an inline SDF model in
-`openamrobot_docking/simulation/models/omr_robot/`. It is now a separate
-ROS 2 package (`omr_description/`) with a SolidWorks-exported URDF/xacro,
+`openamrobot_docking/simulation/models/openamrobot/`. It is now a separate
+ROS 2 package (`openamrobot_description/`) with a SolidWorks-exported URDF/xacro,
 attributed in `NOTICE.md`. The simulation launch spawns the robot at
 runtime via `ros_gz_sim create` from the xacro-expanded URDF.
 
@@ -62,10 +62,10 @@ runtime via `ros_gz_sim create` from the xacro-expanded URDF.
 Both flows share these steps to get a tag pose into the `map` frame:
 
 1. Camera → image → AprilTag detection.
-2. AprilTag node publishes TF: `camera_rgb_optical_frame →
+2. AprilTag node publishes TF: `camera_optical_frame →
    charging_dock_apriltag`.
-3. A TF chain `map → odom → base_footprint → base_link → camera_link
-   → camera_rgb_optical_frame` exists (via SLAM/AMCL + URDF static
+3. A TF chain `map → odom → base_link → base_link → camera_link
+   → camera_optical_frame` exists (via SLAM/AMCL + URDF static
    transforms).
 4. `detected_dock_pose_publisher` (a small C++ node in `src/`) looks up
    TF `map → charging_dock_apriltag` at 10 Hz and publishes it as
@@ -79,7 +79,7 @@ Both flows share these steps to get a tag pose into the `map` frame:
 [ image_proc::RectifyNode ]
    ↓ /image_rect
 [ apriltag_ros::AprilTagNode ]
-   ↓ TF camera_rgb_optical_frame → charging_dock_apriltag
+   ↓ TF camera_optical_frame → charging_dock_apriltag
    ↓ /apriltag/detections
 [ detected_dock_pose_publisher ]
    ↓ /detected_dock_pose (PoseStamped in map)
@@ -120,7 +120,7 @@ and `11_changes_from_upstream.md` for why
 [ Gazebo camera plugin ]
    ↓ /camera/image_raw, /camera/camera_info via ros_gz_bridge
 [ apriltag_ros::AprilTagNode ]   (no rectification — sim camera is pinhole, undistorted)
-   ↓ TF camera_rgb_optical_frame → charging_dock_apriltag
+   ↓ TF camera_optical_frame → charging_dock_apriltag
 [ detected_dock_pose_publisher ]
    ↓ /detected_dock_pose (PoseStamped in map)
 [ dock_trigger.py — 4 phases ]
@@ -147,7 +147,7 @@ ros2 launch openamrobot_docking simulation.launch.py \
     spawn_x:=-4.0 spawn_y:=-4.0 spawn_yaw:=0.0
 ```
 
-Defaults are `(-4, -4, 0)`. The SLAM map's origin coincides with the
+Defaults are `(0, 0, 0)`. The SLAM map's origin coincides with the
 spawn pose, so the dock's coordinates in the map frame depend on where
 the robot starts. The launch file computes:
 
@@ -165,8 +165,8 @@ node. The yaml only provides the default for the default spawn pose.
 graph TD
   CAM[camera_ros] --> RECT[image_proc Rectify]
   RECT --> TAG[apriltag_ros]
-  TAG -->|TF: camera_rgb_optical_frame -> charging_dock_apriltag| TF2[TF Tree]
-  LOC[Localization map->odom->base_footprint->base_link] --> TF2
+  TAG -->|TF: camera_optical_frame -> charging_dock_apriltag| TF2[TF Tree]
+  LOC[Localization map->odom->base_link->base_link] --> TF2
   TF2 --> DET[detected_dock_pose_publisher]
   DET -->|/detected_dock_pose| DOCK[opennav_docking::SimpleChargingDock]
   TRIG[dock_trigger.py] -->|DockRobot action| DOCK
@@ -180,8 +180,8 @@ graph TD
 graph TD
   GZ[Gazebo camera plugin] -->|gz topic| BR[ros_gz_bridge]
   BR -->|/camera/image_raw, /camera/camera_info| TAG[apriltag_ros]
-  TAG -->|TF: camera_rgb_optical_frame -> charging_dock_apriltag| TF2[TF Tree]
-  SLAM[slam_toolbox map->odom->base_footprint] --> TF2
+  TAG -->|TF: camera_optical_frame -> charging_dock_apriltag| TF2[TF Tree]
+  SLAM[slam_toolbox map->odom->base_link] --> TF2
   TF2 --> DET[detected_dock_pose_publisher]
   DET -->|/detected_dock_pose| TRIG[dock_trigger.py 4-phase sequencer]
   TRIG -->|NavigateToPose phase 1| NAV[Nav2/RPP]

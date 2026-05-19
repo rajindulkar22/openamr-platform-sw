@@ -1,393 +1,214 @@
 # Contributing to OpenAMR Platform Software
 
-Thank you for your interest in contributing to OpenAMR Platform Software.
+Thank you for your interest in contributing to `openamr-platform-sw`.
 
-This repository contains the ROS 2 software stack for the OpenAMRobot mobile robot platform. The project includes robot description, simulation, navigation, docking, bringup, control integration, drivers, perception modules, configuration, tools, and software documentation.
+This repository contains the ROS 2 Jazzy software stack for the OpenAMRobot mobile robot platform — robot description, Gazebo Harmonic simulation, Nav2 navigation, AprilTag-based autodocking, and the launch compositions that wire it all together. The project is open-source, educational, and engineering-oriented. Contributions are welcome if they improve reliability, clarity, reproducibility, documentation, simulation, or hardware integration.
 
-The project is experimental and under active development. Contributions are welcome, but they must follow the repository structure and package ownership rules described below.
+## Project Scope
 
----
+This repository focuses on:
 
-# 1. Repository scope
+- robot description (URDF, meshes, Gazebo plugin tags) — `openamrobot_description`
+- Gazebo Harmonic simulation bringup and the ROS↔gz bridge — `openamrobot_gazebo`
+- Nav2 navigation stack, SLAM Toolbox configuration, RViz nav layout — `openamrobot_nav2`
+- AprilTag-based autodocking pipeline and docking simulation — `openamrobot_docking`
+- top-level launch compositions — `openamrobot_bringup` (placeholder, planned)
+- low-level control integration, hardware drivers, perception modules — `openamrobot_control`, `openamrobot_drivers`, `openamrobot_perception` (placeholders, work in progress)
+- product-level configuration, simulation assets, scripts, tools — top-level `config/`, `simulation/`, `scripts/`, `tools/`, `docs/`
 
-This repository is for platform software only.
+Hardware design, firmware, shared interfaces, and UI live in separate repositories (see the [related repositories table in the README](README.md#related-repositories)).
 
-It may contain:
+## Ways to Contribute
 
-- ROS 2 packages
-- robot description files
-- Gazebo / Gazebo Sim simulation support
-- Nav2 integration
-- docking and autodocking software
-- bringup launch files
-- control integration
-- hardware driver integration
-- perception modules
-- software configuration
-- software tools and scripts
-- software documentation
+You can contribute by:
 
-It should not contain:
+- reporting bugs (use a clear minimal reproduction)
+- improving documentation (READMEs, in-package docs under `docs/`)
+- improving launch files and parameter defaults
+- adding or improving simulation assets (worlds, models)
+- adding tests
+- improving diagrams and educational material
+- adding new packages within the project scope above (e.g. populating `openamrobot_drivers`)
 
-- mechanical CAD files
-- PCB design files
-- firmware source code
-- unrelated experiments
-- generated build artifacts
-- private credentials or secrets
+## Contribution Workflow
 
-Repository boundaries:
+1. Fork the repository and create a feature branch in your fork.
+2. Use a clear branch name, for example:
+   - `feature/add-amcl-localization`
+   - `fix/cmd-vel-chain-collision-monitor`
+   - `docs/improve-tf-frames-doc`
+   - `chore/clean-build-artefacts`
+3. Make focused changes. Prefer multiple small Pull Requests over one large one.
+4. Commit with DCO sign-off (see below).
+5. Push your branch to your fork.
+6. Open a Pull Request against `openAMRobot/openamr-platform-sw:main`.
+7. Complete the Pull Request description (summary + test plan).
+8. Wait for maintainer review.
+9. Apply requested changes if needed.
 
-```text
-openamr-platform-sw      -> ROS 2 platform software
-openamr-platform-fw      -> embedded firmware
-openamr-platform-hw      -> mechanical and electrical hardware
+Do not push directly to `main` of the org repository. All changes go through Pull Requests.
 
-openamrobot-docs         -> organization-wide documentation
-openamrobot-interfaces   -> shared ROS 2 messages, services, and actions
-openamrobot-comm         -> shared communication contracts
-openamrobot-ui           -> user/operator interface organization-wide
-```
+## Building and testing locally
 
----
-# 2. ROS 2 package ownership rules
-
-Each ROS 2 package should have one primary responsibility.
-
-The current implemented ROS 2 packages are:
-
-```text
-openamrobot_description  -> robot model, URDF/Xacro, meshes, frames, sensors
-openamrobot_gazebo       -> Gazebo/Gazebo Sim simulation, worlds, models, simulation launch
-openamrobot_nav2         -> Nav2 configuration, maps, planners, controllers, navigation launch
-openamrobot_docking      -> autodocking logic, docking nodes, docking configuration, docking launch
-```
-
-The planned future ROS 2 packages are:
-
-```text
-openamrobot_bringup      -> top-level launch composition for robot or simulation bringup
-openamrobot_control      -> control integration and controller configuration
-openamrobot_drivers      -> hardware driver integration
-openamrobot_perception   -> perception modules and perception pipelines
-```
-
-These planned packages are part of the intended architecture, but they should only become active ROS 2 packages when real functionality is added.
-
-A package may reference another package, but it should not duplicate files from that package.
-
-Correct example:
-
-```text
-openamrobot_docking references openamrobot_gazebo from a launch file.
-```
-
-Incorrect example:
-
-```text
-openamrobot_docking contains copied Gazebo worlds, copied Nav2 parameters, or copied URDF files.
-```
----
-
-# 3. Pull request principle
-
-A pull request should be small, focused, and reviewable.
-
-Good PR examples:
-
-```text
-feat(docking): add AprilTag docking pose publisher
-fix(nav2): tune local planner parameters for simulation
-docs(docking): add autodocking test instructions
-chore(repo): update contribution guidelines
-```
-
-Bad PR examples:
-
-```text
-update everything
-big changes
-robot work
-fix stuff
-```
-
-If you are working on autodocking, your PR should normally modify only:
-
-```text
-ros2/src/openamrobot_docking/
-```
-
-If you are working on navigation, your PR should normally modify only:
-
-```text
-ros2/src/openamrobot_nav2/
-```
-
-If your work requires changes in multiple packages, explain clearly why each package must be changed.
-
----
-
-# 4. How to contribute using GitHub Codespaces
-
-## Step 1: Fork the repository
-
-Open:
-
-```text
-https://github.com/openAMRobot/openamr-platform-sw
-```
-
-Click:
-
-```text
-Fork
-```
-
-## Step 2: Open Codespaces
-
-In your fork, click:
-
-```text
-Code -> Codespaces -> Create codespace on main
-```
-
-## Step 3: Create a feature branch
+Before opening a PR, verify your changes build and run end-to-end:
 
 ```bash
-git checkout main
-git pull origin main
-git checkout -b feature/short-description
-```
-
-Examples:
-
-```bash
-git checkout -b feature/autodocking-apriltag
-git checkout -b fix/nav2-simulation-params
-git checkout -b docs/docking-readme
-```
-
-## Step 4: Make only relevant changes
-
-Work only in the package or directory related to your task.
-
-Before committing, always check:
-
-```bash
-git status
-git diff --stat
-```
-
-The changed files should match the scope of your task.
-
-## Step 5: Build the ROS 2 workspace
-
-From the repository root:
-
-```bash
-cd ros2
 source /opt/ros/jazzy/setup.bash
-colcon build
+colcon build --packages-up-to openamrobot_docking
 source install/setup.bash
+
+# Smoke tests — each in its own terminal:
+ros2 launch openamrobot_gazebo gz_simulator.launch.py       # Gazebo + URDF + bridge
+ros2 launch openamrobot_nav2 sim_bringup_launch.py          # Nav2 + AMCL + map + RViz
+ros2 launch openamrobot_docking openamrobot_docking.launch.py  # AprilTag + docking sequencer
 ```
 
-If you changed only one package, you may build only that package:
+For docking-specific changes, exercise the trigger:
 
 ```bash
-colcon build --packages-select openamrobot_docking
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros2 topic pub /dock_trigger std_msgs/msg/Bool "{data: true}" --once
 ```
 
-## Step 6: Run tests if available
+The PR description must include a **Test plan** section recording which of these smoke tests you ran and the outcomes.
 
-```bash
-colcon test
-colcon test-result --verbose
-```
+## Developer Certificate of Origin
 
-## Step 7: Commit your work
+This repository uses the Developer Certificate of Origin (DCO).
 
-Use a clear commit message.
+By signing off your commits, you certify that you have the right to submit the contribution and that it may be included in this project under the repository license.
 
-```bash
-git add <changed-files>
-git commit -s -m "feat(docking): add AprilTag docking pose publisher"
-```
+Each commit must include a sign-off line:
 
-The `-s` flag adds a Signed-off-by line and confirms that you have the right to contribute the code.
+    Signed-off-by: Your Name <your.email@example.com>
 
-## Step 8: Push your branch
+The easiest way is to commit with `-s`:
 
-```bash
-git push origin feature/short-description
-```
+    git commit -s -m "your commit message"
 
-## Step 9: Open a Pull Request
+## Legal Notice for Contributions
 
-Open a Pull Request from your branch into:
+By submitting a Pull Request to this repository, you confirm that:
 
-```text
-openAMRobot/openamr-platform-sw:main
-```
+- you have the right to submit the contributed work;
+- your contribution is original or properly licensed;
+- your contribution does not knowingly violate third-party rights;
+- your contribution is provided under the MIT License used by this repository;
+- OpenAMRobot may use, modify, publish, distribute, sublicense, and commercialize the contribution under the repository license;
+- third-party code, assets, meshes, models, datasets, images, or configuration files are not added unless their license is clearly documented.
 
----
+If you do not agree with these terms, do not submit a contribution.
 
-# 5. Pull request description template
+## Third-Party Assets and Dependencies
 
-Use this structure in your PR description:
+Do not add third-party files unless their license is clear.
 
-```markdown
-## Summary
+This applies to:
 
-Briefly explain what this PR does.
+- meshes (STL, COLLADA, OBJ)
+- textures, AprilTag images, calibration patterns
+- Gazebo / Ignition models and worlds
+- URDF / Xacro files copied from another project
+- launch files copied from another project
+- datasets
+- configuration files
+- external scripts and vendor libraries
 
-## Scope
+If a third-party asset is required, document in [`NOTICE.md`](NOTICE.md):
 
-This PR modifies:
+- source (repository URL)
+- author or project
+- license
+- modification status (verbatim / modified — describe what was changed)
+- reason for inclusion
 
-- `path/to/package_or_file`
+## ROS 2 and Robotics Contribution Standards
 
-This PR does not modify:
+When changing ROS 2 code or configuration, document the effect on:
 
-- unrelated packages
-- generated build files
-- unrelated documentation
+- nodes, topics, services, actions, parameters
+- TF frames (`base_footprint`, `base_link`, `odom`, `map`, sensor frames, dock frames)
+- launch files and their composition relationships
+- simulation behaviour (`ros2 launch ... docking_sim`)
+- hardware behaviour if applicable
 
-## Motivation
+If a parameter is added or changed, document in the relevant package README:
 
-Explain why this change is needed.
+- parameter name and YAML location
+- default value and units
+- valid or recommended range
+- practical impact (what does increasing/decreasing it do)
+- dependencies (what other params it interacts with)
+- possible failure modes
 
-## Changes
+## Simulation Contributions
 
-- Added ...
-- Changed ...
-- Fixed ...
+Simulation contributions must include:
 
-## How to test
+- launch instructions (which `ros2 launch ...` command exercises the change)
+- required ROS 2 distribution (Jazzy at time of writing)
+- required Gazebo / Ignition version (Harmonic at time of writing)
+- expected behaviour
+- tested scenario (`walled_world.sdf` / `docking_scenario.sdf` / new world)
+- known limitations
+- required models, worlds, and configuration files
+- screenshots or logs if useful
 
-```bash
-cd ros2
-source /opt/ros/jazzy/setup.bash
-colcon build --packages-select <package_name>
-source install/setup.bash
-```
+**Do not commit generated folders.** The repository `.gitignore` already excludes:
 
-Add launch or test commands if relevant.
+- `build/`, `install/`, `log/` (colcon outputs)
+- `__pycache__/`, `*.pyc` (Python caches)
+- Gazebo runtime caches
 
-## Screenshots, logs, or videos
+If you find any of these tracked in git, remove them with `git rm --cached -r <path>`.
 
-Attach screenshots, terminal logs, or videos if the change affects simulation, navigation, docking, or robot behavior.
+## Documentation Standards
 
-## Safety impact
+Documentation should be:
 
-Does this PR affect real robot movement?
+- concise
+- technically accurate
+- beginner-friendly where appropriate
+- useful for real deployment, not only for simulation
+- easy to maintain
+- connected to the actual package structure (link to file paths, line numbers when relevant)
 
-- [ ] No, simulation or documentation only
-- [ ] Yes, it may affect robot behavior
+Prefer practical explanations over generic theory. When documenting a non-obvious design choice (e.g. why wheel collision radius ≠ kinematic radius, why we do not run a standalone `joint_state_publisher`), explain the **why** alongside the **what** so a future maintainer doesn't undo the choice.
 
-If yes, explain the safety considerations.
+## Pull Request Review
 
-## Checklist
+A Pull Request may be rejected or delayed if:
 
-- [ ] I created a focused branch
-- [ ] I changed only files related to this PR
-- [ ] I removed generated files such as `build`, `install`, and `log`
-- [ ] I tested the build
-- [ ] I updated documentation if needed
-- [ ] I explained how to test the change
-```
+- it is outside the scope of this repository;
+- it lacks documentation;
+- it breaks existing launch or configuration behaviour;
+- it introduces unclear third-party licensing;
+- it does not include DCO sign-off;
+- it adds generated or temporary files;
+- it is too large and should be split into smaller Pull Requests.
 
----
+## Recognition
 
-# 6. Autodocking contribution rule
+Substantive contributions are recognized in three places:
 
-Autodocking contributions should be isolated to:
+1. **GitHub commit history** — every signed-off commit is preserved with author name and email. This is the authoritative record.
+2. [`AUTHORS.md`](AUTHORS.md) — a curated list grouped by area of focus (Repository Architecture, Docking pipeline and simulation, etc.). If your Pull Request adds a substantive feature, documentation rewrite, or simulation asset, you may add yourself to the relevant section in the same PR.
+3. **Top-level [`README.md`](README.md)** — a short *Contributors* section links to `AUTHORS.md` so visitors landing on the project page can find attribution in one click.
 
-```text
-ros2/src/openamrobot_docking/
-```
+Trivial changes (typos, formatting, dependency bumps) are recognized through GitHub history only.
 
-The docking package may include:
+Maintainers may reorganize entries in `AUTHORS.md` to keep the file readable, but they will not remove a recognized contributor without consent.
 
-```text
-config/       -> docking parameters and AprilTag configuration
-launch/       -> docking launch files
-scripts/      -> docking helper scripts
-src/          -> C++ docking nodes
-docs/         -> docking documentation
-models/       -> docking-specific models, if required
-README.md     -> package documentation
-package.xml   -> package dependencies
-CMakeLists.txt
-```
+Beyond the repository itself, the OpenAMRobot organization may also promote contributor work through release notes, social channels, and educational material, with the contributor's consent.
 
-The docking package should not include copied files from:
+## Maintainers
 
-```text
-openamrobot_gazebo
-openamrobot_nav2
-openamrobot_description
-openamrobot_bringup
-```
+This repository is maintained by the OpenAMRobot organization.
 
-If docking needs simulation, reference `openamrobot_gazebo`.
+Maintainers are responsible for:
 
-If docking needs the robot model, reference `openamrobot_description`.
-
-If docking needs navigation behavior, reference `openamrobot_nav2`.
-
-Do not duplicate those files inside `openamrobot_docking`.
-
----
-
-# 7. Generated files are not allowed
-
-Do not commit:
-
-```text
-build/
-install/
-log/
-ros2/build/
-ros2/install/
-ros2/log/
-__pycache__/
-*.pyc
-```
-
-If they appear in your PR, remove them before requesting review.
-
----
-
-# 8. Coding and documentation expectations
-
-Contributions should be:
-
-- understandable
-- modular
-- documented
-- testable
-- safe for simulation and real robot usage
-- consistent with ROS 2 package structure
-
-Documentation should explain:
-
-- what the change does
-- why it is needed
-- how to build it
-- how to run it
-- how to test it
-- whether it affects real robot behavior
-
----
-
-# 9. Discussions and questions
-
-For architecture questions, roadmap discussions, or contribution planning, use GitHub Discussions:
-
-```text
-https://github.com/orgs/openAMRobot/discussions
-```
-
-Use Issues for concrete bugs or tasks.
-
-Use Pull Requests for proposed code or documentation changes.
+- reviewing Pull Requests
+- protecting the project architecture and inter-package boundaries
+- maintaining documentation quality
+- checking licensing and contribution hygiene
+- keeping the stack reproducible and useful for robotics education and engineering

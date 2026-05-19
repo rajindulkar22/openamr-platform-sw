@@ -1,272 +1,188 @@
 # Quickstart — From zero to docking
 
-This document walks you from a fresh Ubuntu install to a working docking sequence. Follow it linearly the first time. Each step is independent and copy-pastable.
+This document walks you from a fresh Ubuntu install to a working docking sequence in simulation. Follow it linearly the first time.
 
-For background on what this package does and how it works, see [`00_overview.md`](00_overview.md) first.
+For background on **what** this package does, see [`00_overview.md`](00_overview.md) first.
 
 ---
 
 ## Prerequisites
 
-### System requirements
+### System
 
-The simulation needs:
-- **Ubuntu 24.04 (Noble)** — native install. WSL2 and macOS/Windows are not supported (Gazebo Harmonic requires Linux with a display server).
-- **ROS 2 Jazzy** installed system-wide (see [docs.ros.org/en/jazzy](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html) for the official install).
+- **Ubuntu 24.04 (Noble)** — native install. WSL2 / macOS / Windows are not supported (Gazebo Harmonic needs a Linux display server).
+- **ROS 2 Jazzy** installed system-wide ([install guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html)).
 - **Gazebo Harmonic** (`gz-sim 8.x`) — comes with `ros-jazzy-ros-gz-sim`.
-- **A working display server** (X11 or Wayland). Headless environments (Codespaces, CI runners) cannot run Gazebo's GUI.
+- A working **X11 or Wayland** display.
 
-The real-robot pipeline needs:
-- Same Ubuntu 24.04 + ROS 2 Jazzy.
-- A USB camera (UVC-compatible).
-- A printed AprilTag 36h11 ID 0 of measured size.
-- A robot with `/cmd_vel` accepting `geometry_msgs/Twist` and publishing `/odom`, `/tf` (`map → odom → base_footprint`), and `/scan`.
-
-> **About the devcontainer:** the bundled `.devcontainer/` is intended for **editing code and `colcon build`** only — not for running the simulation. Gazebo and RViz are GUI applications and are not configured for the devcontainer. Run everything from a host Linux system with display access.
-
----
-
-## 1. Install system dependencies
-
-Open a terminal and paste:
+### ROS 2 packages (one-time)
 
 ```bash
 sudo apt update
 sudo apt install -y \
   ros-jazzy-nav2-bringup \
   ros-jazzy-nav2-lifecycle-manager \
-  ros-jazzy-opennav-docking \
-  ros-jazzy-opennav-docking-msgs \
+  ros-jazzy-nav2-amcl \
   ros-jazzy-apriltag-ros \
   ros-jazzy-image-proc \
   ros-jazzy-tf2-ros \
   ros-jazzy-tf2-tools \
   ros-jazzy-tf2-geometry-msgs \
   ros-jazzy-rmw-cyclonedds-cpp \
-  python3-colcon-common-extensions
-```
-
-For the **simulation only**, also install:
-
-```bash
-sudo apt install -y \
-  ros-jazzy-slam-toolbox \
   ros-jazzy-ros-gz-sim \
   ros-jazzy-ros-gz-bridge \
   ros-jazzy-ros-gz-image \
   ros-jazzy-robot-state-publisher \
-  ros-jazzy-rviz2
+  ros-jazzy-joint-state-publisher \
+  ros-jazzy-laser-filters \
+  ros-jazzy-rviz2 \
+  ros-jazzy-topic-tools \
+  python3-colcon-common-extensions
 ```
 
-For the **real robot only**, also install:
-
-```bash
-sudo apt install -y \
-  ros-jazzy-camera-ros \
-  ros-jazzy-camera-calibration
-```
+> ⚠️ **CycloneDDS is required.** The default Jazzy RMW (FastDDS) has a Python crash bug that makes `dock_trigger.py` exit silently when sending Nav2 action goals. Always export:
+> ```bash
+> export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+> ```
+> Put this in `~/.bashrc` once and you're done.
 
 ---
 
-## 2. Set up CycloneDDS (required)
-
-The default FastDDS on Jazzy has a Python-side crash bug that silently kills `dock_trigger.py` when it sends action goals. Use CycloneDDS instead.
-
-In every terminal that will run ROS commands:
+## 2. Clone and build
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-```
-
-To make this automatic for every shell, add the line to your `~/.bashrc`:
-
-```bash
-echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Verify:
-
-```bash
-echo $RMW_IMPLEMENTATION
-# Expected output: rmw_cyclonedds_cpp
-```
-
-If this prints anything else (empty, or `rmw_fastrtps_cpp`), the export didn't take effect. See [`09_troubleshooting.md`](09_troubleshooting.md) "FastDDS Python crash".
-
----
-
-## 3. Clone and build the package
-
-```bash
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/src
-git clone https://github.com/openAMRobot/openamrobot-docking.git
-cd ~/ros2_ws
+cd ~/Downloads
+git clone <fork-or-org-url>/openamr-platform-sw.git
+cd openamr-platform-sw
 
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select openamrobot_docking
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-Verify the build:
-
-```bash
-ros2 pkg list | grep openamrobot
-# Expected output: openamrobot_docking
-```
-
-> **Note:** in every fresh terminal, you need to re-source the environment:
-> ```bash
-> source /opt/ros/jazzy/setup.bash
-> source ~/ros2_ws/install/setup.bash
-> export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-> ```
-> Add these three lines to your `~/.bashrc` to skip this step.
+`colcon build` should finish in <10 s with all packages succeeded. If a package is missing dependencies, re-run the `apt install` above.
 
 ---
 
-## 4a. First run — Simulation (recommended)
+## 3. The 3-terminal launch sequence
 
-This is the fastest way to see the docking pipeline working.
-
-### Launch the full stack
+The docking pipeline is **layered**. Each layer runs in its own terminal so you can restart any one without bringing the others down. In every terminal you open, first source the workspace:
 
 ```bash
-ros2 launch openamrobot_docking simulation.launch.py
+source /opt/ros/jazzy/setup.bash
+source ~/Downloads/openamr-platform-sw/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
-This starts Gazebo (server + GUI), `robot_state_publisher`, `ros_gz_bridge`, `slam_toolbox` (4 s delay), Nav2, `apriltag_node`, `detected_dock_pose_publisher`, `dock_trigger.py`, and RViz.
+(Or put these in a shell alias: `alias src-amr='source ...'`.)
 
-Wait ~15 seconds. You should see in the logs:
-- `slam_toolbox` reaching "active"
-- All Nav2 lifecycle nodes reaching "active"
-
-If RViz opens with the robot model visible and a map starting to populate, you're good.
-
-### Verify the stack before triggering
-
-In a second terminal (with the same environment sourced and `RMW_IMPLEMENTATION` exported):
+### Terminal 1 — Gazebo + robot + ros↔gz bridge
 
 ```bash
-ros2 topic hz /camera/image_raw          # should be ~15 Hz
-ros2 topic echo /detected_dock_pose --once   # should show a pose with x≈4.0, y≈8.9
-ros2 lifecycle nodes                     # every Nav2 node should be 'active'
+ros2 launch openamrobot_gazebo gz_simulator.launch.py
 ```
 
-If `/detected_dock_pose` returns nothing, the AprilTag isn't being detected. Check that the robot has line of sight to the tag in the Gazebo viewport.
+This brings up Gazebo Harmonic with `walled_world.sdf` (a 10×10 m walled arena containing the AprilTag dock on the +x wall), spawns the robot at world `(0, 0, 0)`, and runs the ros↔gz bridge for `/clock`, `/odom`, `/tf`, `/cmd_vel`, `/scan`, `/rgb_image`, `/camera/camera_info`, `/imu`.
 
-### Trigger the docking sequence
+Wait for the Gazebo GUI window to open and the robot to be visible (~3 s).
+
+### Terminal 2 — Nav2 + localization + RViz
 
 ```bash
-ros2 topic pub /dock_trigger std_msgs/msg/Bool "{data: true}" --once
+ros2 launch openamrobot_nav2 sim_bringup_launch.py
 ```
 
-Watch the `dock_trigger` logs in the first terminal. You should see the 4 phases scroll by:
+This brings up Nav2's planner / controller / behavior server, AMCL on a saved map (`maps/my_map.yaml`), and the RViz layout. AMCL is initialised at map `(0, 0, 0)`, so **map ≡ world**.
 
-```
-── Phase 1/4: NavigateToPose → staging zone
-── Phase 2/4: tag search + initial filter (40 samples)
-   scanning to centre tag in camera (tolerance ±2.0°, need 5 consecutive frames)
-   tag centred in camera (image_angle=-1.5°, consecutive=5)
-   tag at (4.000, 8.900) after 40 samples
-── Phase 3/4: ALIGN (spin to perpendicular yaw 1.571)
-   spin done: yaw=1.582 target=1.571 err=-0.011
-── Phase 4/4: line-tracking advance to 0.90m
-   start d_to_tag=2.500m, forward to travel ≈ 1.600m
-   d=1.40m < 1.40m — final align then straight-line approach
-   reached: d_to_tag=0.900m, lateral=+0.4cm (340 samples averaged)
-Docking sequence complete ✓
-```
+Wait for RViz to show the robot localized on the map (you'll see the lidar scan overlaying the map walls, ~10 s).
 
-End state: the robot is stopped ~90 cm in front of the AprilTag, perpendicular to the tag plane.
-
-### Clean restart between runs
-
-If a previous launch left zombie processes and you can't relaunch cleanly:
-
-```bash
-~/ros2_ws/src/openamrobot-docking/openamrobot_docking/scripts/kill_sim.sh
-```
-
-This SIGKILLs every process spawned by the simulation launch file.
-
----
-
-## 4b. First run — Real robot
-
-### 4b.1 — Calibrate the camera
-
-Follow [`06_camera_calibration.md`](06_camera_calibration.md) end-to-end. Output: a calibration file at `~/.ros/camera_info/<camera_name>.yaml`. Skip if your camera is already calibrated.
-
-### 4b.2 — Measure and configure the AprilTag
-
-Print a 36h11 tag of any reasonable size (5–10 cm works for most setups). Measure the outer black-square edge in metres and update [`config/tags_36h11.yaml`](../config/tags_36h11.yaml):
-
-```yaml
-size: 0.0555    # ← replace with YOUR measured value
-```
-
-### 4b.3 — Verify camera + AprilTag detection
-
-```bash
-ros2 launch openamrobot_docking apriltag.launch.yml
-```
-
-In a second terminal:
-
-```bash
-ros2 topic echo /apriltag/detections --once   # should detect tag ID 0
-ros2 run tf2_ros tf2_echo camera_rgb_optical_frame charging_dock_apriltag
-```
-
-If detection works, stop this launch (Ctrl-C) before the next step.
-
-### 4b.4 — Place the AprilTag and measure its pose in your map
-
-You need a pre-built map (typically from SLAM Toolbox or `slam_gmapping`) and AMCL running for localization. With the robot localized, drive it to the dock and read the TF:
-
-```bash
-ros2 run tf2_ros tf2_echo map charging_dock_apriltag
-```
-
-Use the printed `(x, y, yaw)` to update [`config/openamrobot_docking.yaml`](../config/openamrobot_docking.yaml):
-
-```yaml
-home_dock:
-  frame: map
-  pose: [X, Y, YAW]    # ← from tf2_echo
-```
-
-See [`04_apriltag.md`](04_apriltag.md) for the full dock-placement procedure.
-
-### 4b.5 — Launch the full real-robot stack
+### Terminal 3 — Docking layer (this package)
 
 ```bash
 ros2 launch openamrobot_docking openamrobot_docking.launch.py
 ```
 
-Wait for all lifecycle nodes to reach "active", then trigger:
+This adds three nodes on top:
+
+- `apriltag_ros::apriltag_node` (in the `/apriltag` namespace) subscribing to `/rgb_image` + `/camera_info`
+- `detected_dock_pose_publisher` (C++) publishing `/detected_dock_pose` at 10 Hz
+- `dock_trigger.py` (Python, the 4-phase sequencer) waiting on `/dock_trigger`
+- A small `camera_info_bridge` `ros_gz_bridge` instance bridging `gz /camera_info → ROS /camera_info` (image_transport derives the camera_info topic from the image topic and looks for the root-level `/camera_info`, which the upstream bridge doesn't provide directly)
+
+Wait for the `[dock_trigger.py-N] [INFO] Dock trigger ready on 'dock_trigger'` log line.
+
+---
+
+## 4. Trigger the docking
+
+In any sourced terminal (or from the UI):
 
 ```bash
 ros2 topic pub /dock_trigger std_msgs/msg/Bool "{data: true}" --once
 ```
 
-The real-robot pipeline uses `opennav_docking::SimpleChargingDock::controlled_approach`, not the 4-phase sequencer. See [`02_architecture.md`](02_architecture.md) for the difference.
+Watch the **Terminal 3** logs. You should see this sequence:
 
-**Important safety note:** during the first attempts, stay near the robot. Collision detection is disabled during the final approach (the dock itself would otherwise trigger it).
+```
+── Phase 1/4: NavigateToPose → staging zone
+   → staging (3.40, 0.00, yaw=0.00)
+   ... (Nav2 controller messages)
+   Goal succeeded
+── Phase 2/4: tag search + initial filter (40 samples)
+   scanning to centre tag in camera (tolerance ±2.0°, need 5 consecutive frames)
+   tag centred in camera (image_angle=±X.X°, consecutive=5)
+   tag at (≈4.9, ≈0) after 40 samples
+── Phase 3/4: ALIGN (spin to perpendicular yaw 0.000)
+   spin done: yaw=±0.02 target=0.00 err=0.02
+── Phase 4/4: line-tracking advance to 0.90m
+   start d_to_tag=2.19m, forward to travel ≈ 1.29m
+   ... (the robot advances; logs once if tag is lost in the near field)
+   reached: d_to_tag=0.89m, lateral=±X.Xcm (N samples averaged, M during Phase 4)
+   Phase 4 done.
+```
+
+End state: the robot is **stopped ~0.9 m in front of the tag, perpendicular to the tag plane**.
 
 ---
 
-## What to read next
+## 5. Diagnostics if something doesn't behave
 
-| Topic | Read |
-| :---- | :---- |
-| Deeper understanding of the pipeline | [`02_architecture.md`](02_architecture.md) |
-| All available parameters and how to tune them | [`05_parameters.md`](05_parameters.md) |
-| The custom 4-phase sequencer in detail | [`08_sequencer_4phase.md`](08_sequencer_4phase.md) |
-| Something broke — diagnostic table | [`09_troubleshooting.md`](09_troubleshooting.md) |
-| Visual reference (diagrams) | [`10_diagrams.md`](10_diagrams.md) |
-| Why we made certain design choices | [`12_lessons_learned.md`](12_lessons_learned.md) |
+| Symptom | Quick check |
+|---|---|
+| Robot stays at the staging point | `ros2 topic hz /apriltag/detections` — is it >0 Hz? Look for `id: 0` in `ros2 topic echo /apriltag/detections` |
+| `tag never detected during scan` | `ros2 run rqt_image_view rqt_image_view /rgb_image` — is the AprilTag pattern visible (black/white) or uniformly grey? |
+| Robot moves in RViz but not in Gazebo | `ros2 topic info /cmd_vel` — does the bridge subscribe? |
+| Phase 4 finishes but robot stopped 2 m short | Tag size mismatch — check `config/tags_36h11_sim.yaml` `size:` matches the panel face size (`models/apriltag_dock/model.sdf`) |
 
-For the full documentation index, see [`README.md`](README.md).
+Full troubleshooting matrix in [`09_troubleshooting.md`](09_troubleshooting.md).
+
+---
+
+## 6. Where to go next
+
+- [`05_parameters.md`](05_parameters.md) — every YAML knob explained
+- [`08_sequencer_4phase.md`](08_sequencer_4phase.md) — phase-by-phase walkthrough of `dock_trigger.py`
+- [`07_reproduce_results.md`](07_reproduce_results.md) — exact reproduction checklist
+- [`02_architecture.md`](02_architecture.md) — node graph, lifecycle, topics
+
+---
+
+## Real-robot port (high level)
+
+To deploy the same pipeline on hardware, the changes from this quickstart are:
+
+1. Stop using `openamrobot_gazebo` / `sim_bringup_launch.py`. Instead, launch:
+   - your camera driver (e.g. `camera_ros`) publishing `/camera/image_raw` + `/camera/camera_info`
+   - `image_proc` for rectification, publishing `/camera/image_rect`
+   - your lidar driver publishing `/scan`
+   - your motor controller driver publishing `/odom` + `/tf (odom → base_link)` and consuming `/cmd_vel`
+   - `robot_state_publisher` with your robot URDF
+   - Nav2 with AMCL on a pre-built map of the real environment
+2. Use `apriltag.launch.yml` (real-robot variant) instead of `apriltag_sim.launch.yml`. It expects rectified images.
+3. Update `config/dock_trigger.yaml`:
+   - `dock_pose_x`, `dock_pose_y`, `dock_pose_yaw` = the measured real-world dock pose in the map frame
+   - All other parameters can stay (the 4-phase logic is hardware-agnostic)
+4. Print a physical AprilTag 36h11 ID 0 of measured size; update `tags_36h11.yaml` `size:` to match (in metres, **side of the outer black square**).
+5. Calibrate the camera and ship the intrinsics — see [`06_camera_calibration.md`](06_camera_calibration.md).
+
+The Python sequencer is unchanged.

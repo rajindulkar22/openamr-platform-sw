@@ -19,9 +19,9 @@ For the *why* behind each fix (and lessons we learned the hard way), see [`12_le
 | **[sim]** "Failed to create plan with tolerance of: 0.500000" | Goal in inflation zone or costmap not ready | Use `tolerance: 1.0` + A* planner | [§2.4](#24-navigation) |
 | **[sim]** Robot moves a little, then "Collision Ahead - Exiting Spin" | Robot tipped → lidar scans its own body | Reduce velocity_smoother accels | [§2.6](#26-simulation-specific) |
 | **[sim]** Robot reaches dock position but is offset laterally vs the real tag | AprilTag map-frame detection bias, not controller | Bigger tag, more samples in phase 2 filter | [§2.5](#25-docking-flow) |
-| **[sim]** Final yaw off by a few degrees | Phase 4 final-align tolerance, or skipped because `visual_servo_distance ≤ docking_distance` | Tighten `spin_yaw_tolerance` or bump `visual_servo_distance` | [§2.5](#25-docking-flow) |
-| **[sim]** Robot wobbles in the last metre of approach | Closed-loop yaw correction near the tag over-reacts to tiny lateral motion | Make sure `visual_servo_distance > docking_distance` so the straight-line phase engages | [§2.5](#25-docking-flow) |
-| **[sim]** Robot slides on the floor, drive wheels don't grip | URDF spawn z wrong — `base_footprint` not at z=0, drive wheels float | Confirm spawn `-z 0.0` in `simulation.launch.py` | [§2.6](#26-simulation-specific) |
+| **[sim]** Final yaw off by a few degrees | Phase 3 align spin tolerance too loose | Tighten `spin_yaw_tolerance` (default 0.02 rad ≈ 1.1°) | [§2.5](#25-docking-flow) |
+| **[sim]** Robot wobbles in the last metre of approach | Pure-pursuit gain too aggressive in the near field | Increase `line_lookahead_distance` (smoother heading) or decrease `line_yaw_kp` | [§2.5](#25-docking-flow) |
+| **[sim]** Robot slides on the floor, drive wheels don't grip | URDF spawn z wrong — `base_link` not at z=0, drive wheels float | Confirm spawn `-z 0.0` in `simulation.launch.py` | [§2.6](#26-simulation-specific) |
 | **[sim]** Phase 2 scan rotates forever, never centres | Tag never enters the camera frustum / detection rate too low | Check `/apriltag/detections`; bump `scan_rotation_speed` or extend timeout | [§2.5](#25-docking-flow) |
 | **[real]** `opennav_docking` "drives behind the dock" | Sign of `external_detection_translation_x` wrong | Flip to `+0.18` | [§2.5](#25-docking-flow) |
 | **[sim]** `Address already in use` on relaunch | Zombie processes from previous Ctrl-C | Run `scripts/kill_sim.sh` | [§2.7](#27-process--launch) |
@@ -118,14 +118,14 @@ See [`12_lessons_learned.md`](12_lessons_learned.md) "FastDDS Python crash" for 
 
 #### `/detected_dock_pose` is silent even though `/apriltag/detections` works
 
-The TF chain `map → odom → base_footprint → base_link → camera_link → camera_rgb_optical_frame → charging_dock_apriltag` must exist end-to-end. If any link is missing, `detected_dock_pose_publisher` silently produces nothing.
+The TF chain `map → odom → base_link → base_link → camera_link → camera_optical_frame → charging_dock_apriltag` must exist end-to-end. If any link is missing, `detected_dock_pose_publisher` silently produces nothing.
 
 Diagnose:
 
 ```bash
 ros2 run tf2_ros tf2_echo map charging_dock_apriltag       # full chain
-ros2 run tf2_ros tf2_echo map base_footprint               # localization OK?
-ros2 run tf2_ros tf2_echo base_link camera_rgb_optical_frame   # static TF OK?
+ros2 run tf2_ros tf2_echo map base_link               # localization OK?
+ros2 run tf2_ros tf2_echo base_link camera_optical_frame   # static TF OK?
 ros2 run tf2_tools view_frames                              # → frames.pdf
 ```
 
@@ -139,9 +139,9 @@ SLAM Toolbox initialises the map at the robot's spawn pose with the robot's spaw
 
 #### Camera optical frame missing or wrong
 
-- The TF chain must include `camera_link → camera_rgb_optical_frame` (one fixed joint in `omr_description/urdf/omr_robot.urdf.xacro`).
+- The TF chain must include `camera_link → camera_optical_frame` (one fixed joint in `openamrobot_description/urdf/openamrobot.urdf.xacro`).
 - The optical frame carries the (`−π/2`, `0`, `−π/2`) rpy rotation that REP-103 specifies. Don't omit it.
-- **[sim]** Check that the camera sensor's `<gz_frame_id>` in `gazebo_control.xacro` is `camera_rgb_optical_frame` (not `camera_link`).
+- **[sim]** Check that the camera sensor's `<gz_frame_id>` in `gazebo_control.xacro` is `camera_optical_frame` (not `camera_link`).
 
 ---
 
@@ -195,30 +195,33 @@ The phase-2 camera-frame scan and the running-average filter keep this bias as s
 
 #### **[sim]** Final yaw is off by a few degrees
 
-Phase 4 performs a one-shot in-place spin to the running-average perpendicular yaw at `visual_servo_distance`, then drives straight (`omega = 0`) until `docking_distance`. The residual yaw error is bounded by `spin_yaw_tolerance` (default `0.02 rad ≈ 1.1°`).
+The final yaw is set by **Phase 3** (the in-place align spin). Its residual error is bounded by `spin_yaw_tolerance` (default `0.02 rad ≈ 1.1°`).
 
 **If the angle is still too large:**
-- Confirm `visual_servo_distance > docking_distance`; otherwise the straight-line phase is never entered and the line-tracking controller hands off its (possibly imperfect) heading directly to the stop condition.
 - Tighten `spin_yaw_tolerance` to `0.01` (≈ 0.6°), at the cost of a slightly longer spin.
-- Verify the camera-frame scan locked at < 2° in the logs (`tag centred in camera (image_angle=…°)`); a poor lock at phase 2 propagates downstream.
+- Verify the camera-frame scan locked at < 2° in the Phase 2 logs (`tag centred in camera (image_angle=…°)`); a poor lock at Phase 2 biases the running-average tag pose, which biases the perpendicular yaw used in Phase 3.
+- Increase `filter_num_samples` (default 40) to average down detection noise further.
 
 #### **[sim]** Robot wobbles in the last metre of the approach
 
-The line-tracking controller is sensitive near the tag because a centimetre of lateral motion produces a large image-angle change. The straight-line final-approach mode exists precisely to avoid this.
+The line-tracking controller in Phase 4 stays active all the way to `docking_distance`. A centimetre of lateral motion near the tag produces a large image-angle change, so the controller can react sharply.
 
-**Check:**
-- `visual_servo_distance` is **larger** than `docking_distance`. With defaults, that's `1.4 > 0.9`, so the straight-line phase covers the last 0.5 m. If you bumped `docking_distance` past `visual_servo_distance`, the line-tracking stays active all the way and wobbles.
-- The launch log should show `d=1.40m < 1.40m — final align then straight-line approach`.
+**Mitigations:**
+- Increase `line_lookahead_distance` (default 0.3 m) to soften the steering response. Try 0.5–0.7 m.
+- Decrease `line_yaw_kp` (default 2.5) for less aggressive heading correction.
+- Decrease `drive_speed` (default 0.05 m/s) — slower advance gives more time for the running average to stabilise the line.
+
+The previous "visual_servo" sub-phase (one-shot align + straight-line) has been removed — the running-average filter refines the line down to `docking_distance` so a separate near-field mode isn't needed. If the wobble is severe and tuning doesn't help, the tag may be falling out of FOV very early; check `ros2 topic hz /apriltag/detections` during Phase 4.
 
 #### **[sim]** Robot hits the wall during the advance phase
 
-The sequencer stops when distance to the running-average tag ≤ `docking_distance`. With the default `docking_distance: 0.9` and the tag at world `(0, 4.9)` with the panel facing south, the robot stops with its front about 75 cm from the wall. Plenty of margin.
+The sequencer stops when distance to the running-average tag ≤ `docking_distance`. With the default `docking_distance: 0.9` and the tag at world `(4.899, 0)` with the panel facing `-x`, the robot stops with its front about 75 cm from the wall. Plenty of margin.
 
 If you reduce `docking_distance` close to 0.4 m or below, double-check the robot's footprint length and the wall position before relaunching.
 
 #### **[sim]** Robot slides instead of driving cleanly
 
-Check the spawn `z`. The URDF root `base_footprint` must be at world z=0, with `base_joint` lifting `base_link` by `0.053 m` so the wheel centres sit at z=`wheel_radius=0.1 m`. If you spawn `base_footprint` at z=0.053 (an earlier wrong setting), the wheel centres end up at 0.153 m and the drive wheels float 5.3 cm above the ground — only the casters touch, and the robot slides.
+Check the spawn `z`. The URDF root `base_link` must be at world z=0, with `base_joint` lifting `base_link` by `0.053 m` so the wheel centres sit at z=`wheel_radius=0.1 m`. If you spawn `base_link` at z=0.053 (an earlier wrong setting), the wheel centres end up at 0.153 m and the drive wheels float 5.3 cm above the ground — only the casters touch, and the robot slides.
 
 `simulation.launch.py` already uses `-z 0.0`. Verify in the launch file if you've edited it.
 
@@ -260,7 +263,7 @@ Check whether the robot has tipped over (look at the Gazebo viewport). Tipping c
 The gz plugin or `ros_gz_bridge` can't keep up at high camera resolutions.
 
 **Fix:** Keep the camera at **640×480 @ 15 Hz** in
-`omr_description/urdf/gazebo_control.xacro` (the camera sensor block).
+`openamrobot_description/urdf/gazebo_control.xacro` (the camera sensor block).
 HD (1280×720) consistently stalls the bridge. Compensate for resolution
 with a larger physical tag (0.40 m vs 0.25 m).
 

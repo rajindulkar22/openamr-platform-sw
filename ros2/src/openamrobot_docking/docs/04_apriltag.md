@@ -225,7 +225,7 @@ This publishes `/detected_dock_pose` whenever the tag is visible (and the rest o
 
 ### How the 4-phase sequencer uses it
 
-- **Phase 2** runs a closed-loop centring scan using TF `camera_rgb_optical_frame → charging_dock_apriltag` directly (bypassing the map-frame `/detected_dock_pose`), then collects `filter_num_samples` (40) fresh detections into a running-average tag pose with `filter_max_collect_time` (6.0 s) budget.
+- **Phase 2** runs a closed-loop centring scan using TF `camera_optical_frame → charging_dock_apriltag` directly (bypassing the map-frame `/detected_dock_pose`), then collects `filter_num_samples` (40) fresh detections into a running-average tag pose with `filter_max_collect_time` (6.0 s) budget.
 - **Phase 4** keeps reading `/detected_dock_pose` at every iteration during the advance. Each fresh reading folds into the running-average tag pose (true incremental mean — no arbitrary blend coefficient). The perpendicular yaw and lateral offset are recomputed from this average on every loop.
 
 If `/detected_dock_pose` falls silent during the advance (tag occluded, lost), the running average is no longer updated but the controller keeps using the latest value. If the tag never produces a sample, phase 2 aborts cleanly with an error message.

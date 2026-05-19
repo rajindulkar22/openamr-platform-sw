@@ -71,7 +71,7 @@ ros2 topic hz /camera/image_raw           # ~15 Hz
 ros2 topic echo /detected_dock_pose --once  # should give a pose with x≈4.0, y≈8.9 in map
 
 # (b) TF chain end-to-end
-ros2 run tf2_ros tf2_echo map base_footprint
+ros2 run tf2_ros tf2_echo map base_link
 ros2 run tf2_ros tf2_echo map charging_dock_apriltag
 
 # (c) Nav2 lifecycle
@@ -158,7 +158,7 @@ See `04_apriltag.md`.
 ros2 launch openamrobot_docking openamrobot_docking.launch.py
 ```
 
-This launches camera + apriltag + detected_dock_pose_publisher + opennav_docking + nav2 + dock_trigger. Note that with the current `dock_trigger.py`, this runs the **4-phase sequencer** on the real robot (not `opennav_docking`'s built-in approach) — so it expects `dock_pose_x/y/yaw`, `staging_distance`, `docking_distance`, `visual_servo_distance` and the other parameters in `config/dock_trigger.yaml` to match your real-world dock.
+This launches the apriltag detector + `detected_dock_pose_publisher` + `dock_trigger.py` on top of an already-running navigation stack. With the current `dock_trigger.py`, this runs the **4-phase sequencer** on the real robot — so it expects `dock_pose_x/y/yaw`, `staging_distance`, `docking_distance` and the other parameters in `config/dock_trigger.yaml` to match your real-world dock.
 
 If you'd rather use `opennav_docking::SimpleChargingDock`'s `controlled_approach`, see `02_architecture.md` for how to swap the trigger.
 
