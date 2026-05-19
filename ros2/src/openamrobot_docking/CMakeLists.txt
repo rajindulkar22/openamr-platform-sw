@@ -28,7 +28,7 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch config docs models
+install(DIRECTORY launch config docs models media
   DESTINATION share/${PROJECT_NAME}
 )
 
