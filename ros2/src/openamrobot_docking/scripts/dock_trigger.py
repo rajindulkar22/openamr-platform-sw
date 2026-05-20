@@ -153,6 +153,25 @@ class DockTrigger(Node):
         self.declare_parameter('undock_on_false', False)
         self.declare_parameter('dock_type', 'openamrobot_dock')
 
+        # ── Undock ───────────────────────────────────────────────────────────
+        # Publish std_msgs/Bool true on undock_trigger_topic to run the undock
+        # maneuver: reverse undock_reverse_distance metres in a straight line,
+        # then spin 180° in place. The robot ends up facing away from the dock,
+        # free to navigate.
+        #
+        # goal_pose_topic / goal_pose_forward_topic implement the
+        # "undock-before-navigate" gate. Nav2's bt_navigator is remapped (in
+        # the nav2 launch) to listen on goal_pose_forward_topic instead of
+        # goal_pose, so this node owns goal_pose: when a navigation goal
+        # arrives while docked it undocks first, then republishes the goal on
+        # goal_pose_forward_topic for Nav2 to act on. When not docked the goal
+        # is forwarded immediately (pass-through).
+        self.declare_parameter('undock_trigger_topic', 'undock_robot')
+        self.declare_parameter('goal_pose_topic', 'goal_pose')
+        self.declare_parameter('goal_pose_forward_topic', 'goal_pose_nav')
+        self.declare_parameter('undock_reverse_distance', 1.5)   # m straight back
+        self.declare_parameter('undock_reverse_speed', 0.10)     # m/s (magnitude)
+
         # Dock pose in map frame (must match nav2_sim_full.yaml docks/home_dock)
         self.declare_parameter('dock_pose_x', 0.0)
         self.declare_parameter('dock_pose_y', 4.9)
@@ -286,6 +305,11 @@ class DockTrigger(Node):
         self.trigger_topic = self.get_parameter('trigger_topic').value
         self.undock_on_false = self.get_parameter('undock_on_false').value
         self.dock_type = self.get_parameter('dock_type').value
+        self.undock_trigger_topic = self.get_parameter('undock_trigger_topic').value
+        self.goal_pose_topic = self.get_parameter('goal_pose_topic').value
+        self.goal_pose_forward_topic = self.get_parameter('goal_pose_forward_topic').value
+        self.undock_reverse_distance = float(self.get_parameter('undock_reverse_distance').value)
+        self.undock_reverse_speed = float(self.get_parameter('undock_reverse_speed').value)
         self.dock_x = float(self.get_parameter('dock_pose_x').value)
         self.dock_y = float(self.get_parameter('dock_pose_y').value)
         self.dock_yaw = float(self.get_parameter('dock_pose_yaw').value)
@@ -342,16 +366,40 @@ class DockTrigger(Node):
             callback_group=self.cb_group,
         )
 
-        # ── Trigger ─────────────────────────────────────────────────────────
+        # ── State ───────────────────────────────────────────────────────────
+        # busy: a long-running maneuver (dock or undock) is in progress; new
+        #       triggers are ignored until it finishes.
+        # is_docked: the robot completed a docking sequence and has not yet
+        #            undocked. Gates the undock-before-navigate behaviour.
         self.busy = False
+        self.is_docked = False
+
+        # ── Goal-pose gate publisher (forwards to Nav2 after undock) ────────
+        self.goal_pose_pub = self.create_publisher(
+            PoseStamped, self.goal_pose_forward_topic, 10)
+
+        # ── Triggers ────────────────────────────────────────────────────────
         self.create_subscription(
             Bool, self.trigger_topic, self.on_trigger, 10,
+            callback_group=self.cb_group,
+        )
+        self.create_subscription(
+            Bool, self.undock_trigger_topic, self.on_undock, 10,
+            callback_group=self.cb_group,
+        )
+        self.create_subscription(
+            PoseStamped, self.goal_pose_topic, self.on_goal_pose, 10,
             callback_group=self.cb_group,
         )
         self.get_logger().info(
             f"Dock trigger ready on '{self.trigger_topic}'. "
             f"staging={self.staging_distance}m, hold={self.staging_hold_seconds}s, "
             f"dock_dist={self.docking_distance}m"
+        )
+        self.get_logger().info(
+            f"Undock ready on '{self.undock_trigger_topic}' "
+            f"(reverse {self.undock_reverse_distance}m + spin 180°); "
+            f"goal gate '{self.goal_pose_topic}' → '{self.goal_pose_forward_topic}'"
         )
 
     # ──────────────────────────────────────────────────────────────────────
@@ -376,6 +424,53 @@ class DockTrigger(Node):
             self.run_docking_sequence()
         except Exception as e:
             self.get_logger().error(f'Docking sequence error: {e}')
+        finally:
+            self.busy = False
+
+    def on_undock(self, msg: Bool):
+        if not msg.data:
+            return
+        if self.busy:
+            self.get_logger().warn('Sequence already in progress — ignoring undock')
+            return
+        if not self.is_docked:
+            self.get_logger().warn('Not docked — running undock maneuver anyway')
+        self.busy = True
+        t = threading.Thread(target=self._undock_and_release, daemon=True)
+        t.start()
+
+    def _undock_and_release(self):
+        try:
+            self.run_undock_sequence()
+        except Exception as e:
+            self.get_logger().error(f'Undock sequence error: {e}')
+        finally:
+            self.busy = False
+
+    def on_goal_pose(self, msg: PoseStamped):
+        # If not docked, the robot is free to navigate — pass the goal straight
+        # through to Nav2 (which listens on goal_pose_forward_topic).
+        if not self.is_docked:
+            self.goal_pose_pub.publish(msg)
+            return
+        # Docked: undock first, then forward the goal.
+        if self.busy:
+            self.get_logger().warn('Sequence in progress — ignoring navigation goal')
+            return
+        self.busy = True
+        t = threading.Thread(target=self._undock_then_forward, args=(msg,), daemon=True)
+        t.start()
+
+    def _undock_then_forward(self, goal_msg: PoseStamped):
+        try:
+            self.get_logger().info('Navigation goal received while docked — undocking first')
+            if self.run_undock_sequence():
+                self.get_logger().info('   undock complete — forwarding goal to Nav2')
+                self.goal_pose_pub.publish(goal_msg)
+            else:
+                self.get_logger().error('   undock failed — navigation goal NOT forwarded')
+        except Exception as e:
+            self.get_logger().error(f'Undock-then-navigate error: {e}')
         finally:
             self.busy = False
 
@@ -441,7 +536,69 @@ class DockTrigger(Node):
             self.get_logger().error('   advance failed')
             return
 
+        self.is_docked = True
         self.get_logger().info('Docking sequence complete ✓')
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Undock sequence
+    # ──────────────────────────────────────────────────────────────────────
+    def run_undock_sequence(self) -> bool:
+        """Reverse undock_reverse_distance metres in a straight line, then
+        spin 180° in place. Clears is_docked on success.
+        """
+        self.get_logger().info(
+            f'── UNDOCK: reverse {self.undock_reverse_distance:.2f}m, then spin 180°'
+        )
+        if not self._reverse_distance(self.undock_reverse_distance):
+            self.get_logger().error('   undock reverse failed')
+            return False
+
+        pose = self.lookup_robot_pose()
+        if pose is None:
+            self.get_logger().error('   could not read robot pose for 180° spin')
+            return False
+        _, _, ryaw = pose
+        target_yaw = normalize_angle(ryaw + math.pi)
+        self.get_logger().info(
+            f'   spinning 180° (from {ryaw:.3f} to {target_yaw:.3f})'
+        )
+        if not self._spin_to_yaw(target_yaw):
+            self.get_logger().error('   undock 180° spin failed')
+            return False
+
+        self.is_docked = False
+        self.get_logger().info('Undock complete ✓ — robot is free to navigate')
+        return True
+
+    def _reverse_distance(self, dist: float, max_extra_time: float = 10.0) -> bool:
+        """Drive straight backward until the robot has travelled `dist` metres
+        from its starting position (measured in the map frame). No steering.
+        """
+        period = 1.0 / self.drive_rate_hz
+        pose0 = self.lookup_robot_pose()
+        if pose0 is None:
+            return False
+        x0, y0, _ = pose0
+        speed = max(0.02, self.undock_reverse_speed)
+        deadline = time.time() + dist / speed + max_extra_time
+
+        while time.time() < deadline:
+            pose = self.lookup_robot_pose()
+            if pose is None:
+                time.sleep(period)
+                continue
+            rx, ry, _ = pose
+            travelled = math.hypot(rx - x0, ry - y0)
+            if travelled >= dist:
+                self._publish_cmd_vel(0.0, 0.0)
+                self.get_logger().info(f'   reversed {travelled:.2f}m')
+                return True
+            self._publish_cmd_vel(-speed, 0.0)
+            time.sleep(period)
+
+        self._publish_cmd_vel(0.0, 0.0)
+        self.get_logger().error('   reverse timeout')
+        return False
 
     def _has_fresh_detection(self) -> bool:
         """True if /detected_dock_pose carries a message younger than

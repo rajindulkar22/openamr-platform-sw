@@ -6,6 +6,22 @@
     trigger_topic: dock_trigger
     undock_on_false: false
 
+    # ─── Undock + goal gate ───────────────────────────────────────────────────
+    # Publish std_msgs/Bool true on undock_trigger_topic to undock: reverse
+    # undock_reverse_distance metres straight back, then spin 180° in place.
+    #
+    # goal_pose_topic / goal_pose_forward_topic implement undock-before-navigate.
+    # The Nav2 bt_navigator is remapped (in navigation_launch.py) to listen on
+    # goal_pose_forward_topic instead of goal_pose, so this node owns goal_pose:
+    # a navigation goal received while docked triggers an undock first, then the
+    # goal is republished on goal_pose_forward_topic for Nav2. When not docked
+    # the goal passes straight through.
+    undock_trigger_topic: undock_robot
+    goal_pose_topic: goal_pose
+    goal_pose_forward_topic: goal_pose_nav
+    undock_reverse_distance: 1.5        # m — straight-line reverse before turning
+    undock_reverse_speed: 0.10          # m/s — reverse speed magnitude
+
     # Legacy fields read by opennav_docking::SimpleChargingDock — kept so the
     # real-robot launch can fall back to the upstream pipeline. The 7-phase
     # sequencer ignores them and runs its own NavigateToPose + control loop.

@@ -195,7 +195,11 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings,
+                # goal_pose is remapped to goal_pose_nav so the docking node can
+                # gate it: it owns /goal_pose, undocks first if the robot is
+                # docked, then republishes here for Nav2. See openamrobot_docking
+                # dock_trigger.py (undock-before-navigate).
+                remappings=remappings + [('goal_pose', 'goal_pose_nav')],
             ),
             Node(
                 package='nav2_waypoint_follower',
@@ -288,7 +292,9 @@ def generate_launch_description():
                         plugin='nav2_bt_navigator::BtNavigator',
                         name='bt_navigator',
                         parameters=[configured_params],
-                        remappings=remappings,
+                        # See the non-composed bt_navigator above: goal_pose is
+                        # gated through the docking node for undock-before-navigate.
+                        remappings=remappings + [('goal_pose', 'goal_pose_nav')],
                     ),
                     ComposableNode(
                         package='nav2_waypoint_follower',
