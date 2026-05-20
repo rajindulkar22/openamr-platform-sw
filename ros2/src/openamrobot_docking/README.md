@@ -25,7 +25,8 @@ openamrobot_docking/
 │   └── detected_dock_pose_publisher.cpp  ← TF → /detected_dock_pose @10 Hz (C++)
 │
 ├── launch/
-│   ├── openamrobot_docking.launch.py     ← main entry point (Phase 3 below)
+│   ├── bringup_sim.launch.py             ← one command: Gazebo + Nav2 + docking
+│   ├── openamrobot_docking.launch.py     ← docking layer only (Terminal 3 below)
 │   ├── apriltag_sim.launch.yml           ← apriltag_ros node for simulation
 │   └── detected_dock_pose_publisher.launch.py
 │
@@ -76,11 +77,30 @@ A standalone Python node (`dock_trigger.py`) implements a **4-phase autodocking 
 
 End state: robot stopped ~0.9 m in front of the tag, perpendicular to the tag plane. Typical residual error: a few centimetres laterally, ~1° in yaw.
 
+### Undock and undock-before-navigate
+
+The same node also handles leaving the dock:
+
+- **`/undock_robot`** (`std_msgs/Bool` `true`) runs the undock maneuver: reverse `undock_reverse_distance` (1.5 m) in a straight line, then spin 180° in place so the robot ends up facing away from the dock, free to navigate.
+- **Undock-before-navigate**: while docked, a navigation goal must not drive the robot straight off the dock. The node owns `/goal_pose` (Nav2's `bt_navigator` is remapped to `/goal_pose_nav`), so when a goal arrives while docked it undocks first, then republishes the goal on `/goal_pose_nav` for Nav2. When the robot is *not* docked the goal passes straight through with no delay.
+
+The node tracks an internal `is_docked` flag (set when a docking sequence completes, cleared after undock) that drives this gate.
+
 ---
 
-## Running the docking — 3 terminals
+## Running the docking
 
-This package layers **on top of** the platform's standing simulation, it does **not** start Gazebo or Nav2 itself. The three layers run in three terminals (each sourced with `source install/setup.bash` + `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`):
+### One command (everything)
+
+```bash
+ros2 launch openamrobot_docking bringup_sim.launch.py
+```
+
+This starts the three layers in order — Gazebo, then Nav2 (+8 s), then the docking layer (+16 s) — so each is up before the next needs it. Slower machine? Bump the delays: `... bringup_sim.launch.py nav2_delay:=10 docking_delay:=22`.
+
+### Or the 3 layers separately (for tuning / restarting one at a time)
+
+`bringup_sim.launch.py` is just a convenience wrapper — the docking layer itself (`openamrobot_docking.launch.py`) does **not** start Gazebo or Nav2, it composes on top of them. Running the three separately lets you restart any one without bringing the others down. Each terminal is sourced with `source install/setup.bash` + `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`:
 
 ```bash
 # Terminal 1 — Gazebo + URDF + ros<->gz bridge
@@ -93,13 +113,16 @@ ros2 launch openamrobot_nav2 sim_bringup_launch.py
 ros2 launch openamrobot_docking openamrobot_docking.launch.py
 ```
 
-Then, from anywhere (or from the UI):
+### Triggering
+
+Whichever way you launched, drive the sequence over topics (from anywhere, or the UI):
 
 ```bash
-ros2 topic pub /dock_trigger std_msgs/msg/Bool "{data: true}" --once
+ros2 topic pub /dock_trigger  std_msgs/msg/Bool "{data: true}" --once   # dock
+ros2 topic pub /undock_robot  std_msgs/msg/Bool "{data: true}" --once   # undock (reverse 1.5 m + 180°)
 ```
 
-The docking sequence kicks in. Watch the terminal 3 logs to follow the phase transitions.
+Or send a navigation goal (RViz "2D Goal Pose", or a `PoseStamped` on `/goal_pose`): if docked, the robot undocks first, then drives to the goal. Watch the `dock_trigger` logs to follow the phase transitions.
 
 ---
 
@@ -111,7 +134,7 @@ When `openamrobot_docking.launch.py` is started on top of the running Gazebo + N
 |---|---|---|
 | `/apriltag/apriltag` | `apriltag_ros::apriltag_node` (via `apriltag_sim.launch.yml`) | Detects the tag in `/rgb_image`; publishes the TF `camera_optical_frame → charging_dock_apriltag` |
 | `/detected_dock_pose_publisher` | this package (C++) | Reads the chained TF `map → charging_dock_apriltag` and republishes it as `/detected_dock_pose` (PoseStamped) at 10 Hz |
-| `/dock_trigger` | this package (Python) | Listens on `/dock_trigger` (Bool); on `true`, runs the 4-phase sequence |
+| `/dock_trigger` | this package (Python) | On `/dock_trigger` (Bool) runs the 4-phase dock; on `/undock_robot` (Bool) runs the undock maneuver; gates `/goal_pose` → `/goal_pose_nav` for undock-before-navigate |
 | `/camera_info_bridge` | `ros_gz_bridge` instance | Bridges the gz `/camera_info` topic to ROS (workaround for the upstream bridge that only bridges `/camera/camera_info`) |
 
 ---
@@ -122,9 +145,9 @@ When `openamrobot_docking.launch.py` is started on top of the running Gazebo + N
 |---|---|---|
 | `openamrobot_description` | URDF + meshes + Gazebo plugin tags | Spawned by `_gazebo`'s launch; we read TF (`camera_optical_frame`, `base_link`) from `robot_state_publisher` |
 | `openamrobot_gazebo` | Simulator bringup + ros↔gz bridge + the docking world | We require `walled_world.sdf` (which `<include>`s `model://apriltag_dock` shipped by this package) |
-| `openamrobot_nav2` | Nav2 stack + AMCL + map + RViz | We invoke the Nav2 `NavigateToPose` action in Phase 1; we publish directly on `/cmd_vel` for phases 2/3/4 |
+| `openamrobot_nav2` | Nav2 stack + AMCL + map + RViz | We invoke the Nav2 `NavigateToPose` action in Phase 1; we publish directly on `/cmd_vel` for phases 2/3/4; its `navigation_launch.py` remaps `bt_navigator`'s `goal_pose` → `goal_pose_nav` so this node can gate goals (undock-before-navigate) |
 
-The runtime composition is declared as `<exec_depend>` in `package.xml`; no source files from these packages are copied or shipped here.
+The runtime composition is declared as `<exec_depend>` in `package.xml`; no source files from these packages are copied or shipped here. The one `goal_pose` remap above is the only edit this feature needs in a sibling package.
 
 ---
 

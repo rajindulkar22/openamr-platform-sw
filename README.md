@@ -21,13 +21,30 @@ source ~/.bashrc
 
 # Clone + build
 git clone https://github.com/openAMRobot/openamr-platform-sw.git
-cd openamr-platform-sw
+cd openamr-platform-sw/ros2          # the colcon workspace is ros2/ (it contains src/)
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
+colcon build --symlink-install        # creates build/ install/ log/ inside ros2/
 source install/setup.bash
 ```
 
-Then launch the docking simulation in **3 terminals** (each sourced with `source install/setup.bash` + `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`):
+Sourcing does **not** carry over between terminals, so in **every** new terminal run these three lines first (from `ros2/`, the workspace root):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+**Then launch everything with one command:**
+
+```bash
+ros2 launch openamrobot_docking bringup_sim.launch.py
+```
+
+This brings up the three layers in order — Gazebo, then Nav2 (+8 s), then the docking pipeline (+16 s). On a slower machine, increase the gaps: `... bringup_sim.launch.py nav2_delay:=10 docking_delay:=22`.
+
+<details>
+<summary>Or run the three layers separately, one per terminal (handy for tuning/restarting one layer)</summary>
 
 ```bash
 # Terminal 1 — Gazebo + robot + bridge
@@ -40,11 +57,17 @@ ros2 launch openamrobot_nav2 sim_bringup_launch.py
 ros2 launch openamrobot_docking openamrobot_docking.launch.py
 ```
 
-Wait ~10 s for Nav2 to localize, then fire the docking from any sourced terminal:
+> If Terminal 3 fails with `package 'openamrobot_docking' not found`, you forgot the `source install/setup.bash` in that terminal.
+</details>
+
+Wait ~10 s for Nav2 to localize, then drive the robot from any sourced terminal:
 
 ```bash
-ros2 topic pub /dock_trigger std_msgs/msg/Bool "{data: true}" --once
+ros2 topic pub /dock_trigger  std_msgs/msg/Bool "{data: true}" --once   # dock
+ros2 topic pub /undock_robot  std_msgs/msg/Bool "{data: true}" --once   # undock: reverse 1.5 m + spin 180°
 ```
+
+You can also send a navigation goal (RViz "2D Goal Pose", or a `PoseStamped` on `/goal_pose`): if the robot is docked it undocks first, then drives to the goal.
 
 The robot navigates to a staging zone, scans for the AprilTag, aligns perpendicular to it, then drives onto the dock. End state: ~90 cm from the tag, perpendicular.
 
