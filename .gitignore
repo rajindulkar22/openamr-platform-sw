@@ -87,3 +87,6 @@ temp/
 *.tgz
 *.7z
 *.rar
+
+# UI — lives in its own separate repo (openamrobot-ui)
+ui/

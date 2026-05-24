@@ -1,112 +1,54 @@
 # Security Policy
 
-## Project status
+## Reporting Security Issues
 
-OpenAMR Platform Software is currently experimental and under active development.
+Please do not report security issues publicly in GitHub Issues.
 
-The software may affect simulation behavior and, in future versions, real robot behavior. Security and safety issues should be reported responsibly.
+If you discover a security vulnerability, unsafe behavior, exposed credential, or sensitive technical issue, please contact the maintainers privately:
 
----
+    botshare.ai@gmail.com
 
-# Supported versions
+Include:
 
-At this stage, only the latest `main` branch is actively maintained.
-
-| Version | Supported |
-| ------- | --------- |
-| main    | Yes       |
-| older branches | No official support |
-
----
-
-# Reporting a vulnerability
-
-If you discover a security issue, please do not disclose it publicly before the maintainers have had time to review it.
-
-Report security concerns by contacting the OpenAMRobot maintainers through the GitHub organization or repository maintainers.
-
-If GitHub private vulnerability reporting is enabled for this repository, use that feature.
-
----
-
-# What counts as a security or safety issue
-
-Examples include:
-
-- unsafe robot motion caused by software behavior
-- insecure communication interfaces
-- exposed credentials or secrets
-- unsafe default configurations
-- vulnerabilities in deployment scripts
-- unsafe firmware/software interaction
-- unexpected motor activation
-- unsafe docking behavior
-- unsafe navigation behavior
-- privilege escalation in tooling or scripts
-
----
-
-# Safety-related issues
-
-Because this repository may eventually control real robots, safety-related issues should be treated seriously even if they are not traditional cybersecurity vulnerabilities.
-
-If your issue may cause:
-- physical movement,
-- collision risk,
-- unsafe docking,
-- unsafe motor behavior,
-- hardware damage,
-
-please clearly mark it as safety-related.
-
----
-
-# Responsible disclosure expectations
-
-Please include:
-
-- affected package or file
+- repository name
+- affected files or components
 - description of the issue
-- reproduction steps
-- expected behavior
-- actual behavior
+- steps to reproduce if applicable
 - possible impact
-- suggested mitigation if known
+- suggested fix if known
 
----
+## Scope
 
-# Secrets policy
+This policy applies to:
 
-Do not commit:
+- source code (all packages under `ros2/src/`)
+- ROS 2 launch files
+- configuration files (Nav2 params, SLAM params, AprilTag params, dock_trigger params, gz bridge config)
+- URDF / xacro robot description
+- Gazebo worlds and models shipped in the repository
+- documentation that could expose unsafe deployment practices
+- credentials, tokens, or private configuration accidentally committed to the repository
 
-- passwords
-- API keys
-- private certificates
-- private keys
-- deployment secrets
-- Wi-Fi credentials
-- industrial controller credentials
+## Safety-Critical Robotics Notice
 
-If a secret is committed accidentally:
-- rotate it immediately,
-- remove it from repository history if necessary,
-- notify maintainers if the exposure may affect others.
+This repository contains software intended to run on **real autonomous mobile robots**. A bug in this codebase can cause physical harm.
 
----
+Before deploying changes on physical hardware:
 
-# Simulation vs real robot safety
+- test in simulation first (`ros2 launch openamrobot_nav2 sim_bringup_launch.py` and `ros2 launch openamrobot_docking openamrobot_docking.launch.py`);
+- verify emergency stop behavior;
+- verify speed limits (`velocity_smoother.max_velocity` in `openamrobot_nav2/config/nav2_params.yaml`, `drive_speed` in `openamrobot_docking/config/dock_trigger.yaml`);
+- verify the `collision_monitor` polygons match the **actual** robot footprint (the simulated config has `FootprintApproach.enabled: false` — re-enable on the real robot);
+- verify sensor topics and TF frames are correctly remapped;
+- test in a controlled environment with a person near an E-stop;
+- do not operate near people without appropriate safety validation.
 
-Simulation behavior does not guarantee safe real-world robot behavior.
+OpenAMRobot maintainers may remove or reject contributions that introduce unsafe behavior or unclear deployment risks.
 
-Before deploying to physical hardware, users are responsible for validating:
+## Disclosure
 
-- navigation behavior
-- docking behavior
-- obstacle handling
-- motor controller integration
-- emergency stop behavior
-- communication reliability
-- hardware safety
-- regulatory compliance
+Once a security issue is confirmed and addressed:
 
-This repository is provided for research, education, and development purposes.
+- the fix is released through a standard Pull Request;
+- the reporter is credited in the commit message and (with consent) in `AUTHORS.md`;
+- the disclosure is described in `CHANGELOG.md` once a fix is publicly available.

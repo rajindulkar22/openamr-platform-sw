@@ -168,5 +168,15 @@
       </link>
     </model>
 
+    <!-- AprilTag 36h11 ID=0 dock station — mounted on wall_1 (x=5 inner face), facing robot.
+         The model definition (geometry + texture) is shipped by openamrobot_docking
+         under models/apriltag_dock/. GZ_SIM_RESOURCE_PATH is extended by the docking
+         launch to make `model://apriltag_dock` resolvable. -->
+    <include>
+      <uri>model://apriltag_dock</uri>
+      <name>apriltag_dock</name>
+      <pose>4.899 0 0.3 0 0 3.14159</pose>
+    </include>
+
   </world>
 </sdf>

@@ -18,10 +18,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Raj Indulkar',
-    maintainer_email='rajindulkar7@gmail.com',
+    maintainer='OpenAMRobot Maintainers',
+    maintainer_email='botshare.ai@gmail.com',
     description='Gazebo Harmonic simulation package for OpenAMRobot',
-    license='Apache-2.0',
+    license='MIT',
     extras_require={
         'test': ['pytest'],
     },

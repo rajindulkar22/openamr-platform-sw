@@ -1,0 +1,27 @@
+launch:
+# AprilTag detection for simulation.
+#
+# Does NOT start camera_ros — the camera is provided by Gazebo via
+# ros_gz_bridge. Passes the raw image directly to AprilTagNode (no
+# rectification needed in simulation).
+#
+# Subscribes to:
+#   /rgb_image          (image, remapped from /apriltag/image_rect)
+#   /camera_info        (intrinsics, bridged in openamrobot_docking.launch.py)
+# Publishes:
+#   /apriltag/detections           (apriltag_msgs/AprilTagDetectionArray)
+#   /tf  (camera_optical_frame -> charging_dock_apriltag)
+#
+# Detector parameters (family, tag size, IDs, frame names) come from
+# config/tags_36h11_sim.yaml.
+
+- node:
+    pkg: apriltag_ros
+    exec: apriltag_node
+    name: apriltag
+    namespace: apriltag
+    param:
+    - from: $(find-pkg-share openamrobot_docking)/config/tags_36h11_sim.yaml
+    remap:
+    - from: /apriltag/image_rect
+      to: /rgb_image

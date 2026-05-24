@@ -16,17 +16,29 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time')
     use_robot_state_pub = LaunchConfiguration('use_robot_state_pub')
+    world = LaunchConfiguration('world')
 
-    world = os.path.join(gazebo_dir, 'worlds', 'walled_world.sdf')
     xacro_file = os.path.join(description_dir, 'urdf', 'robo_urdf.urdf.xacro')
     robot_desc = ParameterValue(Command(['xacro ', xacro_file]), value_type=str)
 
+    # walled_world.sdf <include>s `model://apriltag_dock` which is shipped
+    # by the openamrobot_docking package. We add its models/ directory to
+    # GZ_SIM_RESOURCE_PATH so Gazebo can resolve the include at world load.
+    # If openamrobot_docking is not installed, skip silently — gz_simulator
+    # still works for non-docking workflows.
+    resource_paths = [
+        os.path.join(gazebo_dir, 'worlds'),
+        str(Path(description_dir).parent.resolve()),
+    ]
+    try:
+        docking_dir = get_package_share_directory('openamrobot_docking')
+        resource_paths.append(os.path.join(docking_dir, 'models'))
+    except Exception:
+        pass
+
     gz_resource_path = SetEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
-        value=':'.join([
-            os.path.join(gazebo_dir, 'worlds'),
-            str(Path(description_dir).parent.resolve()),
-        ])
+        value=':'.join(resource_paths),
     )
 
     start_robot_state_publisher_cmd = Node(
@@ -65,7 +77,7 @@ def generate_launch_description():
                 'gz_sim.launch.py',
             )
         ),
-        launch_arguments={'gz_args': ['-r -v 4 ', world]}.items(),
+        launch_arguments={'gz_args': ['-r -v 4 ', LaunchConfiguration('world')]}.items(),
     )
 
     spawn_entity = Node(
@@ -88,6 +100,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_robot_state_pub', default_value='True',
             description='Whether to start robot_state_publisher'),
+        DeclareLaunchArgument(
+            'world',
+            default_value=os.path.join(gazebo_dir, 'worlds', 'walled_world.sdf'),
+            description='Full path to the Gazebo world file (.sdf) to load'),
         gz_resource_path,
         gz_sim,
         bridge,
