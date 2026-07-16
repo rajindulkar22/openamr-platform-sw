@@ -1,10 +1,11 @@
 # OpenAMR Platform Software
 
-ROS 2 Jazzy software stack for the **OpenAMRobot** mobile robot platform: robot description, Gazebo Harmonic simulation, Nav2 navigation, and AprilTag-based autodocking (dock + undock).
+ROS 2 Jazzy software stack for the **OpenAMRobot** mobile robot platform: robot description, Gazebo Harmonic simulation, Nav2 navigation, and AprilTag-bundle-based autodocking (dock + undock) — three AprilTags (family 36h11, IDs 0/1/2) on the dock give a wide-baseline normal for stable yaw alignment.
 
 📖 **[README](README.md)** &nbsp;·&nbsp;
 🤝 **[Contributing](CONTRIBUTING.md)** &nbsp;·&nbsp;
 🏗️ **[Architecture](docs/architecture/ARCHITECTURE_OVERVIEW.md)** &nbsp;·&nbsp;
+🎓 **[ROS 2 course](docs/ROS2_COMPLETE_COURSE.md)** &nbsp;·&nbsp;
 🛠️ **[Developer setup](docs/getting_started/DEVELOPER_SETUP.md)** &nbsp;·&nbsp;
 🧰 **[Troubleshooting](docs/getting_started/TROUBLESHOOTING.md)** &nbsp;·&nbsp;
 ✅ **[Testing](docs/getting_started/TESTING_GUIDE.md)** &nbsp;·&nbsp;
@@ -16,6 +17,19 @@ ROS 2 Jazzy software stack for the **OpenAMRobot** mobile robot platform: robot 
 ℹ️ **[Notice](NOTICE.md)**
 
 > 📦 **Status: experimental.** Tuned end-to-end in the docking simulation. Real-robot bringup (drivers, control, hardware integration) is in progress and will land under the placeholder packages described below.
+
+> [!NOTE]
+> This repository is part of the **OpenAMRobot vX.X.X** release.
+>
+> Download the complete product release (Hardware + Software + Firmware + UI + Documentation) here:
+>
+> **https://github.com/openAMRobot/openamrobot-release/releases/latest**
+
+---
+
+## Learning ROS 2
+
+New to ROS 2, Gazebo, RViz, launch files, TF, URDF/Xacro, actions, lifecycle nodes, or components? Start with the hands-on [Complete ROS 2 Course for Beginners](docs/ROS2_COMPLETE_COURSE.md). It walks from a fresh ROS 2 Jazzy setup through building nodes, interfaces, simulation, visualization, and a complete differential-drive robot project.
 
 ---
 
@@ -240,10 +254,10 @@ Wait ~10 s for Nav2 to localize, then from any sourced terminal (or `docker comp
 
 ```bash
 ros2 topic pub /dock_trigger  std_msgs/msg/Bool "{data: true}" --once   # dock
-ros2 topic pub /undock_robot  std_msgs/msg/Bool "{data: true}" --once   # undock: reverse 1.5 m + spin 180°
+ros2 topic pub /undock_robot  std_msgs/msg/Bool "{data: true}" --once   # undock: reverse 0.7 m + spin 180°
 ```
 
-You can also send a navigation goal (RViz **"2D Goal Pose"**, or a `PoseStamped` on `/goal_pose`): if the robot is docked it **undocks first**, then drives to the goal. The robot navigates to a staging zone, scans for the AprilTag, aligns perpendicular to it, then drives onto the dock — ending ~90 cm from the tag, perpendicular.
+You can also send a navigation goal (RViz **"2D Goal Pose"**, or a `PoseStamped` on `/goal_pose`): if the robot is docked it **undocks first**, then drives to the goal. The robot navigates to a staging zone, finds the 3-tag bundle, estimates the dock normal from the outer tags' wide baseline, follows the normal axis on a pure-pursuit, then finishes with an axis-frozen visual servo on the centre tag — ending perpendicular to the dock, aligned for charging.
 
 For a step-by-step walkthrough with diagnostics: [`ros2/src/openamrobot_docking/docs/01_quickstart.md`](ros2/src/openamrobot_docking/docs/01_quickstart.md).
 
@@ -354,12 +368,24 @@ Each package ships its own README. The deep engineering docs live under [`ros2/s
 
 For the docking pipeline specifically, start with [`docs/01_quickstart.md`](ros2/src/openamrobot_docking/docs/01_quickstart.md).
 
+## Engineering deep dives
+
+Beyond per-package READMEs, three doc series record the *why* behind the real-robot work —
+tuned values, what was tried and rejected, and the gaps that remain:
+
+| Series | Covers |
+|---|---|
+| [`docs/navigation/`](docs/navigation/README.md) | The Nav2 stack on real hardware: architecture, costmaps, planner/controller tuning, goal routing, troubleshooting |
+| [`docs/safety/`](docs/safety/README.md) | The motion-safety envelope: collision monitor, speed/accel limits and watchdogs, and known gaps (no hardware E-stop yet) |
+| [`docs/real_robot/`](docs/real_robot/README.md) | Taking the stack from Gazebo onto real hardware: bring-up, networking/DDS, vision pipeline & CPU budget, thermal limits, calibration, operator UI |
+
 ---
 
 ## Roadmap / TODO
 
-- [ ] **Obstacle-aware dock & undock.** Today the dock and undock phases bypass Nav2 — `dock_trigger.py` publishes straight to `/cmd_vel`, so the lidar, costmaps and collision monitor are not in the loop during those maneuvers. Bring obstacle awareness back into the dock/undock phases (lidar-based collision checking and/or routing the maneuver through Nav2) so the robot stops or replans if something enters its path while approaching or leaving the dock.
-- [ ] **Higher-precision docking (target ~99.99% reliability).** The current 4-phase approach lands within a few centimetres laterally and ~1° in yaw, which is good but not yet production-grade. Investigate a more reliable approach (e.g. tighter visual-servo final stage, multi-tag or larger-tag geometry, better camera calibration, sensor fusion) so docking succeeds essentially every time across lighting and pose variations.
+- [x] **Forward obstacle guard during dock approach.** ✅ Done — `dock_trigger.py` runs a LIDAR-cone check on `/scan_filtered` during the dock drive phases (pre-check + per-iteration). The dock and undock phases still publish straight to `/cmd_vel` (bypassing Nav2's `collision_monitor`), so this guard is the safety net. See [`docs/05_parameters.md`](ros2/src/openamrobot_docking/docs/05_parameters.md) "Obstacle guard during drive phases" for the parameters and the empirical calibration of the body filter.
+- [ ] **Rear obstacle awareness during undock.** Not done. The LIDAR sits on top of the chassis and `scan_body_filter` chops the rear ±40° angular sector (where the body would otherwise reflect every ray), so a rear cone check on `/scan_filtered` reads +inf and would be a no-op. Prerequisite: add a rear sensor (bumper, rear camera, sonar). Then re-introduce a backward `_wait_for_path_clear` in `_reverse_distance` and `run_undock_sequence`.
+- [ ] **Higher-precision docking (target ±10 mm / ±2°, ~99.99 % reliability).** The current 3-tag bundle delivers ~1–2 cm laterally and ~1° in yaw in simulation, which is solid but not yet production-grade across lighting and pose variations. The full research — vendor-agnostic target derivation, sensing-method catalogue, validation protocol, failure modes, calibration & commissioning, multi-dock handling — is in [`ros2/src/openamrobot_docking/docs/14_docking_research.md`](ros2/src/openamrobot_docking/docs/14_docking_research.md). Next concrete step: execute the §9 bench validation matrix once hardware lands.
 
 ---
 
@@ -393,6 +419,37 @@ Architecture, roadmap, and collaboration: <https://github.com/orgs/openAMRobot/d
 This repository may affect real-robot behaviour. Users are responsible for validating robot safety (E-stop, watchdog, fault handling), navigation, docking, motor control, sensor integration, deployment suitability, and regulatory compliance.
 
 This software is provided for research, education, and development.
+
+---
+
+## 💜 Support OpenAMRobot
+
+Support open-source robotics, ROS 2 development, AI robotics education, and dual-arm mobile robot research.
+
+### ⚡ Back the build — one-time, no strings
+
+| Tier | What it says about you | Link |
+|---|---|---|
+| ⚡ **First Mover - €5** | You got here first, and you didn't overthink it. Your name goes on the backers wall - permanently - as one of the people who moved before it was obvious. Five euros, one good instinct. | <a href="https://buy.stripe.com/eVqcN5b99eeAaSd7WPgUM06" target="_blank" rel="noopener noreferrer">💳&nbsp;Back&nbsp;it&nbsp;→</a> |
+| 🎯 **Sharpshooter - €25** | You spotted it early and called it. Name on the wall + a shareable "OpenAMRobot Backer" badge - proof you saw it coming while everyone else was still scrolling. | <a href="https://buy.stripe.com/4gMdR9ell1rO2lH90TgUM07" target="_blank" rel="noopener noreferrer">💳&nbsp;Back&nbsp;it&nbsp;→</a> |
+| 🕶️ **Insider - €50** | You want in behind the curtain. Everything above + the backer-only build log and early files - every breakthrough, every faceplant, unfiltered. You see it before the internet does. | <a href="https://buy.stripe.com/eVq14nfpp4E0gcx2CvgUM08" target="_blank" rel="noopener noreferrer">💳&nbsp;Back&nbsp;it&nbsp;→</a> |
+| 🔩 **Immortal - €100** | Your name goes on the actual robot. Physically. Forever. A machine will roll around carrying your name long after any of us remember why - and you'll have the photo to prove you were there. | <a href="https://buy.stripe.com/00w00jdhhb2o4tPfphgUM09" target="_blank" rel="noopener noreferrer">💳&nbsp;Back&nbsp;it&nbsp;→</a> |
+| 🏆 **Founding Backer - €250** | Not a supporter - a co-author. Everything above + a personal thank-you in a build video. When this becomes something, you were one of the people who decided it would. | <a href="https://buy.stripe.com/28EeVdcdddawaSdeldgUM0a" target="_blank" rel="noopener noreferrer">💳&nbsp;Back&nbsp;it&nbsp;→</a> |
+
+### 🔁 Monthly subscriptions — build it with us, every month
+
+| Tier | What you get | Link |
+|---|---|---|
+| 😇 **Benefactor - €5/mo** | This month, officially not wasted. €5 to help build an open robot for everyone - cheaper than the coffee you'll forget you bought. Your name goes on the wall. History will remember you - well, me for sure. 🤖 | <a href="https://buy.stripe.com/9B6cN5dhh9Yk7G1cd5gUM05" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+| ❤️ **Community - €19/mo** | You're in. Community access, project & roadmap updates, basic documentation, and community Q&A. (Private consultation not included.) | <a href="https://buy.stripe.com/6oUcN55OPc6s3pL4KDgUM00" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+| 🔧 **Builder - €79/mo** | For the ones who actually build. Everything in Community + builder docs, monthly group Q&A, selected tutorials, early design updates, and discounts on digital packs. (Private consultation not included.) | <a href="https://buy.stripe.com/14A28r0uvdaw9O9eldgUM01" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+| 🚀 **Pro Support - €299/mo** | Expert support for advanced builders, early founders, and small labs. Includes 1 private consulting call per month and up to 3 hours/month of technical guidance. | <a href="https://buy.stripe.com/dRm4gz4KLdaw6BX4KDgUM02" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+| 🏢 **Startup Support - €750/mo** | For robotics startups and teams heading toward a prototype. Includes 2 private consulting calls per month, roadmap support, GitHub/documentation review, supplier review, and up to 6 hours/month. | <a href="https://buy.stripe.com/7sY8wPfpp8Ugf8t90TgUM03" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+| 🔬 **Lab Support - €1,500/mo** | For universities, corporate labs, and training centers. Includes 4 private sessions per month, lab implementation support, architecture reviews, training-roadmap support, and up to 10 hours/month. | <a href="https://buy.stripe.com/eVq14ndhh2vSaSda4XgUM04" target="_blank" rel="noopener noreferrer">💳&nbsp;Subscribe&nbsp;→</a> |
+
+**❤️ GitHub Sponsors:** <a href="https://github.com/sponsors/openAMRobot" target="_blank" rel="noopener noreferrer"> 🐙 &nbsp;github.com/sponsors/openAMRobot&nbsp;→</a>
+
+*Every contribution — €5 or €1,500 — literally builds this robot. No billion-dollar lab required. **You're not donating. You're building it.** 🤖*
 
 ---
 
